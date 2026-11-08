@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home Game Ledger</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<style>
+  body { background:#0e3b2c; background-image:radial-gradient(circle at 50% -10%, #17583f 0%, #0e3b2c 60%); min-height:100vh; }
+  .card { background:#fbf8f1; color:#1d2a24; }
+  input, select { background:#fff; border:1px solid #d9d2c0; border-radius:.5rem; padding:.4rem .6rem; min-width:0; }
+  input:focus, select:focus, button:focus-visible { outline:2px solid #c8372d; outline-offset:1px; }
+  input[type=number]::-webkit-inner-spin-button { display:none; }
+  .chip { width:2.25rem; height:2.25rem; border-radius:9999px; border:3px dashed rgba(255,255,255,.85); background:#c8372d; box-shadow:0 0 0 3px #c8372d; }
+  pre { white-space:pre-wrap; word-break:break-word; }
+</style>
+</head>
+<body class="text-stone-100 font-sans antialiased">
+<div class="max-w-4xl mx-auto px-4 py-8">
+
+  <header class="flex items-center gap-4 mb-6">
+    <div class="chip shrink-0" aria-hidden="true"></div>
+    <div class="flex-1">
+      <h1 class="text-3xl font-bold tracking-tight">Home Game Ledger</h1>
+      <p class="text-emerald-100/80 text-sm">Track buy-ins, payments and cash-outs. Check the table adds up. <span id="saveStatus" class="text-emerald-200/60"></span></p>
+    </div>
+  </header>
+
+  <section class="card rounded-2xl p-4 sm:p-5 mb-5 flex flex-wrap gap-3 items-end">
+    <label class="flex-1 min-w-[10rem] text-sm font-medium">Game name
+      <input id="gameName" class="w-full mt-1 font-normal" value="poker">
+    </label>
+    <label class="text-sm font-medium">Date
+      <input id="gameDate" type="date" class="block mt-1 font-normal">
+    </label>
+    <label class="text-sm font-medium">Start time
+      <input id="gameStart" type="time" class="block mt-1 font-normal">
+    </label>
+    <label class="text-sm font-medium">End time
+      <input id="gameEnd" type="time" class="block mt-1 font-normal">
+    </label>
+    <label class="text-sm font-medium">Default buy-in ($)
+      <input id="defaultBuyIn" type="number" min="0" step="any" value="50" class="block w-28 mt-1 font-normal">
+    </label>
+  </section>
+
+  <section id="players" class="space-y-4" aria-live="polite"></section>
+
+  <div class="flex gap-3 mt-4">
+    <button id="addPlayer" class="bg-amber-400 hover:bg-amber-300 text-stone-900 font-semibold rounded-lg px-4 py-2">Add player</button>
+    <button id="reset" class="border border-emerald-200/40 hover:bg-white/10 rounded-lg px-4 py-2 text-sm">Clear game</button>
+  </div>
+
+  <section id="summary" class="card rounded-2xl p-5 mt-6">
+    <div class="grid grid-cols-3 gap-3 text-center">
+      <div><div class="text-xs text-stone-500">Total buy-ins</div><div id="tIn" class="text-2xl font-bold">$0</div></div>
+      <div><div class="text-xs text-stone-500">Total buy-outs</div><div id="tOut" class="text-2xl font-bold">$0</div></div>
+      <div><div class="text-xs text-stone-500">Difference</div><div id="tDiff" class="text-2xl font-bold">$0</div></div>
+    </div>
+    <div id="status" class="mt-4 rounded-xl px-4 py-3 text-sm font-medium"></div>
+    <div id="methods" class="mt-4 flex flex-wrap gap-2 text-sm"></div>
+  </section>
+
+  <section class="card rounded-2xl p-5 mt-5">
+    <div class="flex items-center justify-between mb-2 gap-3 flex-wrap">
+      <h2 class="font-bold text-lg">Settle up</h2>
+      <label class="text-xs text-stone-600 flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="settleToggle" class="w-4 h-4 p-0 accent-emerald-700" checked> Include in copied summary</label>
+    </div>
+    <p class="text-xs text-stone-500 mb-3">Fewest payments so losers pay the winners. With a bank, money already paid in is counted, so the bank is just another person to pay or be paid.</p>
+    <div id="settleList" class="space-y-1.5 text-sm"></div>
+  </section>
+
+  <section class="card rounded-2xl p-5 mt-5">
+    <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
+      <div><h2 class="font-bold text-lg">Copyable summary</h2>
+        <p class="text-xs text-stone-500">Letter after a buy-in = how it was paid: v venmo, z zelle, c cash, o other, b bank. No letter = unpaid. Number in parentheses = buy-out.</p></div>
+      <button id="copy" class="bg-stone-900 hover:bg-stone-700 text-white rounded-lg px-4 py-2 text-sm font-semibold">Copy text</button>
+    </div>
+    <pre id="output" class="bg-white border border-stone-200 rounded-xl p-4 text-sm font-mono leading-relaxed"></pre>
+  </section>
+</div>
+
+<script>
+const METHODS = ['Unpaid', 'Venmo', 'Zelle', 'Cash', 'Other'];
+const payClass = m => m === 'Unpaid'
+  ? 'bg-red-100 text-red-900 border-red-400 font-semibold'
+  : 'bg-emerald-100 text-emerald-900 border-emerald-500 font-semibold';
+const STORE = 'pokerLedger.v1';
+let uid = 0;
+const id = () => 'i' + Date.now().toString(36) + (uid++);
+const $ = s => document.querySelector(s);
+
+let state = load() || fresh();
+
+function fresh() {
+  return { name: 'poker', date: new Date().toISOString().slice(0, 10), start: '', end: '', defaultBuyIn: 50,
+    players: [newPlayer(), newPlayer()] };
+}
+function newPlayer(def = 50) {
+  return { id: id(), name: '', buyIns: [{ id: id(), amount: def, method: 'Unpaid' }], out: '0' };
+}
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(STORE));
+    if (!d || !Array.isArray(d.players)) return null;
+    const base = fresh();
+    return Object.assign(base, d, { players: d.players.map(p => {
+      const bi = Array.isArray(p.buyIns) && p.buyIns.length ? p.buyIns : [{}];
+      return { id: p.id || id(), name: p.name || '', host: !!p.host, out: p.out == null ? '0' : p.out,
+        buyIns: bi.map(x => ({ id: x.id || id(), amount: x.amount == null ? 50 : x.amount, method: x.method || 'Unpaid' })) };
+    }) });
+  } catch (e) { return null; }
+}
+function save() {
+  const el = document.getElementById('saveStatus');
+  try {
+    localStorage.setItem(STORE, JSON.stringify(state));
+    if (el) el.textContent = 'Saved in this browser';
+  } catch (e) {
+    if (el) el.textContent = 'Auto-save blocked by this browser';
+  }
+}
+window.addEventListener('pagehide', save);
+
+const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+const money = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toFixed(2).replace(/\.00$/, '');
+const signed = n => (n > 0 ? '+' : n < 0 ? '-' : '') + '$' + Math.abs(n).toFixed(2).replace(/\.00$/, '');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const playerIn = p => p.buyIns.reduce((s, b) => s + num(b.amount), 0);
+// Bank owes = buy-out minus any buy-ins this player has not paid yet.
+const unpaidIn = p => p.host ? 0 : p.buyIns.filter(b => b.method === 'Unpaid').reduce((t, b) => t + num(b.amount), 0);
+const owedByBank = p => Math.round((num(p.out) - unpaidIn(p)) * 100) / 100;
+const owePhrase = p => {
+  if (p.host || !hasOut(p)) return '';
+  const v = owedByBank(p);
+  return v > 0 ? `bank owes ${v}` : v < 0 ? `owes bank ${Math.abs(v)}` : 'settled';
+};
+const r2 = x => Math.round(x * 100) / 100;
+function settlements() {
+  const P = state.players;
+  if (P.length < 2) return { note: 'Add at least two players.' };
+  if (P.some(p => !hasOut(p))) return { note: 'Enter every buy-out to see who pays whom.' };
+  const tIn = P.reduce((t, p) => t + playerIn(p), 0), tOut = P.reduce((t, p) => t + num(p.out), 0);
+  const diff = r2(tOut - tIn);
+  if (diff !== 0) return { note: `Not zero sum (off by ${diff > 0 ? '+' : '-'}${Math.abs(diff)}). Fix buy-ins or buy-outs first.` };
+  const bank = P.find(p => p.host);
+  const bal = P.map(p => ({ p, name: pname(p), v: bank ? (p.host ? 0 : owedByBank(p)) : r2(num(p.out) - playerIn(p)) }));
+  if (bank) bal.find(x => x.p === bank).v = r2(-bal.reduce((t, x) => t + x.v, 0));
+  const cr = bal.filter(x => x.v > 0.004).map(x => ({ name: x.name, v: x.v })).sort((a, b) => b.v - a.v);
+  const de = bal.filter(x => x.v < -0.004).map(x => ({ name: x.name, v: -x.v })).sort((a, b) => b.v - a.v);
+  const list = [];
+  while (cr.length && de.length) {
+    const amt = r2(Math.min(cr[0].v, de[0].v));
+    list.push({ from: de[0].name, to: cr[0].name, amt });
+    cr[0].v = r2(cr[0].v - amt); de[0].v = r2(de[0].v - amt);
+    if (cr[0].v <= 0.004) cr.shift();
+    if (de[0].v <= 0.004) de.shift();
+  }
+  return { list };
+}
+function renderSettle() {
+  const el = $('#settleList'), r = settlements();
+  if (r.note) el.innerHTML = `<div class="text-stone-500">${esc(r.note)}</div>`;
+  else if (!r.list.length) el.innerHTML = '<div class="font-semibold text-emerald-800">Everyone is square. No payments needed.</div>';
+  else el.innerHTML = r.list.map(x => `<div class="flex items-center gap-2 bg-stone-100 rounded-lg px-3 py-2"><b>${esc(x.from)}</b> pays <b>${esc(x.to)}</b><span class="ml-auto font-bold text-emerald-800">${money(x.amt)}</span></div>`).join('');
+}
+const hasOut = p => p.out !== '' && p.out !== null && !isNaN(parseFloat(p.out));
+
+function render() {
+  const wrap = $('#players');
+  wrap.innerHTML = '';
+  if (!state.players.length) {
+    wrap.innerHTML = '<div class="card rounded-2xl p-6 text-center text-stone-500">No players yet. Add the first player to start the game.</div>';
+  }
+  state.players.forEach((p, i) => {
+    const el = document.createElement('div');
+    el.className = 'card rounded-2xl p-4 sm:p-5';
+    el.dataset.pid = p.id;
+    el.innerHTML = `
+      <div class="flex gap-3 items-center flex-wrap">
+        <input data-f="name" class="flex-1 min-w-[10rem] font-semibold text-lg" placeholder="Player ${i + 1} name" value="${esc(p.name)}">
+        <label class="text-sm flex items-center gap-2">Buy-out $
+          <input data-f="out" type="number" min="0" step="any" inputmode="decimal" class="w-28" placeholder="0" value="${esc(p.out)}">
+        </label>
+        <label class="text-sm flex items-center gap-1.5 cursor-pointer"><input type="checkbox" data-f="host" class="w-4 h-4 p-0 accent-emerald-700" ${p.host ? 'checked' : ''}> Bank</label>
+        <button data-act="rmPlayer" class="text-stone-400 hover:text-red-600 text-sm px-2" aria-label="Remove player">Remove</button>
+      </div>
+      <div class="mt-3 space-y-2">
+        ${p.buyIns.map((b, j) => `
+          <div class="flex gap-2 items-center" data-bid="${b.id}">
+            <span class="text-xs text-stone-500 w-14 shrink-0">Buy-in ${j + 1}</span>
+            <span class="text-stone-500">$</span>
+            <input data-f="amount" type="number" min="0" step="any" inputmode="decimal" class="w-24" value="${esc(b.amount)}">
+            ${p.host ? '<span class="flex-1 max-w-[9rem] border rounded-lg px-2 py-1.5 text-sm bg-emerald-100 text-emerald-900 border-emerald-500 font-semibold">Bank</span>' : `<select data-f="method" class="flex-1 max-w-[9rem] ${payClass(b.method)}" aria-label="Payment method">
+              ${METHODS.map(m => `<option ${m === b.method ? 'selected' : ''}>${m}</option>`).join('')}
+            </select>`}
+            <button data-act="rmBuyIn" class="text-stone-400 hover:text-red-600 px-2 text-lg leading-none ${p.buyIns.length < 2 ? 'invisible' : ''}" aria-label="Remove buy-in">&times;</button>
+          </div>`).join('')}
+      </div>
+      <div class="mt-3 flex items-center justify-between flex-wrap gap-2">
+        <button data-act="addBuyIn" class="text-sm font-semibold text-emerald-800 hover:text-emerald-600">+ Add rebuy</button>
+        <div class="text-sm text-stone-600"><span data-r="in"></span> in &middot; <span data-r="net" class="font-bold"></span><span data-r="owe" class="block text-right text-xs font-semibold text-amber-800"></span></div>
+      </div>`;
+    wrap.appendChild(el);
+  });
+  update();
+}
+
+function update() {
+  state.players.forEach(p => {
+    const el = document.querySelector(`[data-pid="${p.id}"]`);
+    if (!el) return;
+    el.querySelector('[data-r=in]').textContent = money(playerIn(p));
+    el.querySelector('[data-r=owe]').textContent = owePhrase(p);
+    const n = el.querySelector('[data-r=net]');
+    if (hasOut(p)) {
+      const net = num(p.out) - playerIn(p);
+      n.textContent = signed(net) + ' net';
+      n.className = 'font-bold ' + (net > 0 ? 'text-emerald-700' : net < 0 ? 'text-red-700' : 'text-stone-600');
+    } else { n.textContent = 'awaiting buy-out'; n.className = 'font-medium text-stone-400'; }
+  });
+
+  const tIn = state.players.reduce((s, p) => s + playerIn(p), 0);
+  const tOut = state.players.reduce((s, p) => s + num(p.out), 0);
+  const pending = state.players.filter(p => !hasOut(p));
+  const diff = Math.round((tOut - tIn) * 100) / 100;
+  $('#tIn').textContent = money(tIn);
+  $('#tOut').textContent = money(tOut);
+  $('#tDiff').textContent = signed(diff);
+
+  const st = $('#status');
+  if (!state.players.length) {
+    st.className = 'mt-4 rounded-xl px-4 py-3 text-sm font-medium bg-stone-100 text-stone-600';
+    st.textContent = 'Add players to begin.';
+  } else if (pending.length) {
+    st.className = 'mt-4 rounded-xl px-4 py-3 text-sm font-medium bg-stone-100 text-stone-700';
+    st.textContent = `Waiting on ${pending.length} buy-out${pending.length > 1 ? 's' : ''}: ` +
+      pending.map(p => p.name.trim() || 'Unnamed').join(', ') + '. Zero-sum check runs once everyone has cashed out.';
+  } else if (diff === 0) {
+    st.className = 'mt-4 rounded-xl px-4 py-3 text-sm font-semibold bg-emerald-100 text-emerald-900';
+    st.textContent = 'Zero sum. Buy-outs match buy-ins exactly.';
+  } else if (diff < 0) {
+    st.className = 'mt-4 rounded-xl px-4 py-3 text-sm font-semibold bg-red-100 text-red-900';
+    st.textContent = `Not zero sum. The table is short ${money(Math.abs(diff))}: more went in than came out.`;
+  } else {
+    st.className = 'mt-4 rounded-xl px-4 py-3 text-sm font-semibold bg-red-100 text-red-900';
+    st.textContent = `Not zero sum. Buy-outs exceed buy-ins by ${money(diff)}.`;
+  }
+
+  const byMethod = {};
+  state.players.forEach(p => p.buyIns.forEach(b => { const k = p.host ? 'Bank' : b.method; byMethod[k] = (byMethod[k] || 0) + num(b.amount); }));
+  $('#methods').innerHTML = Object.entries(byMethod).filter(([, v]) => v > 0)
+    .map(([m, v]) => `<span class="border rounded-full px-3 py-1 ${payClass(m)}">${m}: <b>${money(v)}</b></span>`).join('');
+
+  renderSettle();
+  $('#output').textContent = buildText(tIn, tOut, pending, diff);
+  save();
+}
+
+const CODES = { Venmo: 'v', Zelle: 'z', Cash: 'c', Other: 'o' };
+function fmtTime(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  return ((h % 12) || 12) + (m ? ':' + String(m).padStart(2, '0') : '') + (h < 12 ? ' am' : ' pm');
+}
+const pname = p => p.name.trim() || 'unnamed';
+function buildText() {
+  let head = state.name || 'poker';
+  if (state.date) {
+    const dt = new Date(state.date + 'T12:00:00');
+    head += ' ' + dt.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' +
+      `${dt.getMonth() + 1}/${dt.getDate()}/${String(dt.getFullYear()).slice(-2)}`;
+  }
+  const s = fmtTime(state.start), e = fmtTime(state.end);
+  const times = s && e ? `${s} - ${e}` : s ? `${s} - ?` : e ? `? - ${e}` : '';
+  const lines = [head];
+  if (times) lines.push(times);
+  lines.push('');
+  state.players.forEach((p, i) => {
+    const ins = p.buyIns.map(b => num(b.amount) + (p.host ? 'b' : CODES[b.method] || '')).join(' ');
+    lines.push(`${i + 1}. ${pname(p)}${p.host ? ' [bank]' : ''} ${ins} (${hasOut(p) ? num(p.out) : '?'})`);
+  });
+  if (!state.players.length) return lines.join('\n');
+
+  const tIn = state.players.reduce((t, p) => t + playerIn(p), 0);
+  const tOut = state.players.reduce((t, p) => t + num(p.out), 0);
+  const pending = state.players.filter(p => !hasOut(p)).length;
+  const diff = Math.round((tOut - tIn) * 100) / 100;
+  lines.push('', `Total buy-ins: ${tIn}`, `Total buy-outs: ${tOut}`);
+  lines.push(pending ? `Zero sum: pending (${pending} buy-out${pending > 1 ? 's' : ''} missing)`
+    : diff === 0 ? 'Zero sum: yes' : `Zero sum: no (off by ${diff > 0 ? '+' : '-'}${Math.abs(diff)})`);
+  lines.push('', 'Profit / loss');
+  state.players.forEach(p => {
+    const net = Math.round((num(p.out) - playerIn(p)) * 100) / 100;
+    const owe = owePhrase(p);
+    lines.push(`${pname(p)}: ` + (hasOut(p) ? (net > 0 ? '+' : net < 0 ? '-' : '') + Math.abs(net) : '?') + (owe ? ` (${owe})` : ''));
+  });
+  const sr = settlements();
+  if (state.settle !== false && sr.list) {
+    lines.push('', 'Settle up');
+    if (!sr.list.length) lines.push('No payments needed');
+    sr.list.forEach(x => lines.push(`${x.from} pays ${x.to} ${x.amt}`));
+  }
+  return lines.join('\n');
+}
+
+// Events: text edits update state without re-rendering so focus is kept.
+document.addEventListener('input', e => {
+  const t = e.target, f = t.dataset.f;
+  if (t.id === 'gameName') state.name = t.value;
+  else if (t.id === 'gameDate') state.date = t.value;
+  else if (t.id === 'gameStart') state.start = t.value;
+  else if (t.id === 'gameEnd') state.end = t.value;
+  else if (t.id === 'settleToggle') state.settle = t.checked;
+  else if (t.id === 'defaultBuyIn') state.defaultBuyIn = num(t.value);
+  else if (f) {
+    const p = state.players.find(x => x.id === t.closest('[data-pid]').dataset.pid);
+    if (f === 'host') { p.host = t.checked; render(); return; }
+    if (f === 'name' || f === 'out') p[f] = t.value;
+    else { const b = p.buyIns.find(x => x.id === t.closest('[data-bid]').dataset.bid); b[f] = t.value;
+      if (f === 'method') t.className = 'flex-1 max-w-[9rem] ' + payClass(t.value); }
+  } else return;
+  update();
+});
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  const card = btn.closest('[data-pid]');
+  const p = card && state.players.find(x => x.id === card.dataset.pid);
+  const act = btn.dataset.act;
+  if (act === 'addBuyIn') p.buyIns.push({ id: id(), amount: state.defaultBuyIn, method: 'Unpaid' });
+  if (act === 'rmBuyIn') p.buyIns = p.buyIns.filter(b => b.id !== btn.closest('[data-bid]').dataset.bid);
+  if (act === 'rmPlayer') state.players = state.players.filter(x => x !== p);
+  render();
+  if (act === 'addBuyIn') { const ins = document.querySelectorAll(`[data-pid="${p.id}"] [data-f=amount]`); ins[ins.length - 1].focus(); ins[ins.length - 1].select(); }
+});
+
+$('#addPlayer').onclick = () => {
+  state.players.push(newPlayer(state.defaultBuyIn));
+  render();
+  const names = document.querySelectorAll('[data-f=name]');
+  names[names.length - 1].focus();
+};
+let resetTimer = null;
+$('#reset').onclick = () => {
+  const b = $('#reset');
+  if (!resetTimer) {
+    b.textContent = 'Click again to confirm';
+    b.classList.add('bg-red-600', 'border-red-600');
+    resetTimer = setTimeout(cancelReset, 3500);
+    return;
+  }
+  cancelReset();
+  state = fresh(); sync(); render();
+};
+function cancelReset() {
+  clearTimeout(resetTimer); resetTimer = null;
+  const b = $('#reset');
+  b.textContent = 'Clear game';
+  b.classList.remove('bg-red-600', 'border-red-600');
+}
+$('#copy').onclick = async () => {
+  const text = $('#output').textContent, b = $('#copy');
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); ta.remove();
+  }
+  b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy text', 1500);
+};
+
+function sync() { $('#gameName').value = state.name; $('#gameDate').value = state.date;
+  $('#gameStart').value = state.start || ''; $('#gameEnd').value = state.end || ''; $('#settleToggle').checked = state.settle !== false; $('#defaultBuyIn').value = state.defaultBuyIn; }
+sync(); render();
+</script>
+</body>
+</html>
