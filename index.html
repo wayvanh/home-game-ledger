@@ -104,8 +104,8 @@ function nowLocal() {
   return { date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, time: `${pad(d.getHours())}:${pad(d.getMinutes())}` };
 }
 function fresh() {
-  const now = nowLocal();
-  return { name: 'poker', date: now.date, start: now.time, end: '', sb: '.25', bb: '.25', defaultBuyIn: 50,
+  const d = new Date(), pad = n => String(n).padStart(2, '0');
+  return { name: 'poker', date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, start: '', end: '', sb: '.25', bb: '.25', defaultBuyIn: 50,
     players: [newPlayer(), newPlayer()] };
 }
 function newPlayer(def = 50) {
