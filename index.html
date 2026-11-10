@@ -26,28 +26,32 @@
     </div>
   </header>
 
-  <section class="card rounded-2xl p-4 sm:p-5 mb-5 flex flex-wrap gap-3 items-end">
-    <label class="flex-1 min-w-[10rem] text-sm font-medium">Game name
-      <input id="gameName" class="w-full mt-1 font-normal" value="poker">
+  <section class="card rounded-2xl p-4 sm:p-5 mb-5 space-y-3">
+    <label class="block text-sm font-medium">Game name
+      <input id="gameName" class="block w-48 max-w-full mt-1 font-normal" value="poker">
     </label>
-    <label class="text-sm font-medium">Date
-      <input id="gameDate" type="date" class="block mt-1 font-normal">
-    </label>
-    <label class="text-sm font-medium">Small blind
-      <input id="gameSB" type="text" inputmode="decimal" placeholder="1" class="block w-24 mt-1 font-normal">
-    </label>
-    <label class="text-sm font-medium">Big blind
-      <input id="gameBB" type="text" inputmode="decimal" placeholder="2" class="block w-24 mt-1 font-normal">
-    </label>
-    <label class="text-sm font-medium">Start time
-      <input id="gameStart" type="time" class="block mt-1 font-normal">
-    </label>
-    <label class="text-sm font-medium">End time
-      <input id="gameEnd" type="time" class="block mt-1 font-normal">
-    </label>
-    <label class="text-sm font-medium">Default buy-in ($)
-      <input id="defaultBuyIn" type="number" min="0" step="any" value="50" class="block w-28 mt-1 font-normal">
-    </label>
+    <div class="flex flex-wrap gap-3 items-end">
+      <label class="text-sm font-medium">Date
+        <input id="gameDate" type="date" class="block mt-1 font-normal">
+      </label>
+      <label class="text-sm font-medium">Start time
+        <input id="gameStart" type="time" class="block mt-1 font-normal">
+      </label>
+      <label class="text-sm font-medium">End time
+        <input id="gameEnd" type="time" class="block mt-1 font-normal">
+      </label>
+    </div>
+    <div class="flex flex-wrap gap-3 items-end">
+      <label class="text-sm font-medium">Small blind
+        <input id="gameSB" type="text" inputmode="decimal" placeholder="1" class="block w-24 mt-1 font-normal">
+      </label>
+      <label class="text-sm font-medium">Big blind
+        <input id="gameBB" type="text" inputmode="decimal" placeholder="2" class="block w-24 mt-1 font-normal">
+      </label>
+      <label class="text-sm font-medium">Default buy-in ($)
+        <input id="defaultBuyIn" type="number" min="0" step="any" value="50" class="block w-28 mt-1 font-normal">
+      </label>
+    </div>
   </section>
 
   <section id="players" class="space-y-4" aria-live="polite"></section>
@@ -98,11 +102,6 @@ const $ = s => document.querySelector(s);
 
 let state = load() || fresh();
 
-// Current date/time on this device's clock.
-function nowLocal() {
-  const d = new Date(), pad = n => String(n).padStart(2, '0');
-  return { date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, time: `${pad(d.getHours())}:${pad(d.getMinutes())}` };
-}
 function fresh() {
   const d = new Date(), pad = n => String(n).padStart(2, '0');
   return { name: 'poker', date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, start: '', end: '', sb: '.25', bb: '.25', defaultBuyIn: 50,
