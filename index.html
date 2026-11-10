@@ -157,7 +157,7 @@ function settlements() {
   if (P.length < 2) return { note: 'Add at least two players.' };
   if (P.some(p => !hasOut(p))) return { note: 'Enter every buy-out to see who pays whom.' };
   const tIn = P.reduce((t, p) => t + playerIn(p), 0), tOut = P.reduce((t, p) => t + num(p.out), 0);
-  const diff = r2(tOut - tIn);
+  const diff = r2(tIn - tOut);
   if (diff !== 0) return { note: `Not zero sum (off by ${diff > 0 ? '+' : '-'}${Math.abs(diff)}). Fix buy-ins or buy-outs first.` };
   const bank = P.find(p => p.host);
   const bal = P.map(p => ({ p, name: pname(p), v: bank ? (p.host ? 0 : owedByBank(p)) : r2(num(p.out) - playerIn(p)) }));
@@ -240,7 +240,7 @@ function update() {
   const tIn = state.players.reduce((s, p) => s + playerIn(p), 0);
   const tOut = state.players.reduce((s, p) => s + num(p.out), 0);
   const pending = state.players.filter(p => !hasOut(p));
-  const diff = Math.round((tOut - tIn) * 100) / 100;
+  const diff = Math.round((tIn - tOut) * 100) / 100;
   $('#tIn').textContent = money(tIn);
   $('#tOut').textContent = money(tOut);
   $('#tDiff').textContent = signed(diff);
@@ -256,12 +256,12 @@ function update() {
   } else if (diff === 0) {
     st.className = 'mt-4 rounded-xl px-4 py-3 text-sm font-semibold bg-emerald-100 text-emerald-900';
     st.textContent = 'Zero sum. Buy-outs match buy-ins exactly.';
-  } else if (diff < 0) {
+  } else if (diff > 0) {
     st.className = 'mt-4 rounded-xl px-4 py-3 text-sm font-semibold bg-red-100 text-red-900';
-    st.textContent = `Not zero sum. The table is short ${money(Math.abs(diff))}: more went in than came out.`;
+    st.textContent = `Not zero sum. Buy-ins exceed buy-outs by ${money(diff)}.`;
   } else {
     st.className = 'mt-4 rounded-xl px-4 py-3 text-sm font-semibold bg-red-100 text-red-900';
-    st.textContent = `Not zero sum. Buy-outs exceed buy-ins by ${money(diff)}.`;
+    st.textContent = `Not zero sum. Buy-outs exceed buy-ins by ${money(Math.abs(diff))}.`;
   }
 
   const byMethod = {};
@@ -306,7 +306,7 @@ function buildText() {
   const tIn = state.players.reduce((t, p) => t + playerIn(p), 0);
   const tOut = state.players.reduce((t, p) => t + num(p.out), 0);
   const pending = state.players.filter(p => !hasOut(p)).length;
-  const diff = Math.round((tOut - tIn) * 100) / 100;
+  const diff = Math.round((tIn - tOut) * 100) / 100;
   lines.push('', `Total buy-ins: ${tIn}`, `Total buy-outs: ${tOut}`);
   lines.push(pending ? `Zero sum: pending (${pending} buy-out${pending > 1 ? 's' : ''} missing)`
     : diff === 0 ? 'Zero sum: yes' : `Zero sum: no (off by ${diff > 0 ? '+' : '-'}${Math.abs(diff)})`);
