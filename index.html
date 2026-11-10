@@ -33,6 +33,12 @@
     <label class="text-sm font-medium">Date
       <input id="gameDate" type="date" class="block mt-1 font-normal">
     </label>
+    <label class="text-sm font-medium">Small blind
+      <input id="gameSB" type="text" inputmode="decimal" placeholder="1" class="block w-24 mt-1 font-normal">
+    </label>
+    <label class="text-sm font-medium">Big blind
+      <input id="gameBB" type="text" inputmode="decimal" placeholder="2" class="block w-24 mt-1 font-normal">
+    </label>
     <label class="text-sm font-medium">Start time
       <input id="gameStart" type="time" class="block mt-1 font-normal">
     </label>
@@ -92,8 +98,14 @@ const $ = s => document.querySelector(s);
 
 let state = load() || fresh();
 
+// Current date/time on this device's clock.
+function nowLocal() {
+  const d = new Date(), pad = n => String(n).padStart(2, '0');
+  return { date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, time: `${pad(d.getHours())}:${pad(d.getMinutes())}` };
+}
 function fresh() {
-  return { name: 'poker', date: new Date().toISOString().slice(0, 10), start: '', end: '', defaultBuyIn: 50,
+  const now = nowLocal();
+  return { name: 'poker', date: now.date, start: now.time, end: '', sb: '.25', bb: '.25', defaultBuyIn: 50,
     players: [newPlayer(), newPlayer()] };
 }
 function newPlayer(def = 50) {
@@ -265,6 +277,8 @@ function fmtTime(t) {
   const [h, m] = t.split(':').map(Number);
   return ((h % 12) || 12) + (m ? ':' + String(m).padStart(2, '0') : '') + (h < 12 ? ' am' : ' pm');
 }
+// ".25" -> "$.25", "0.25" -> "$.25", "$1" -> "$1"
+const fmtBlind = v => { const c = String(v || '').trim().replace(/^\$/, '').replace(/^0(?=\.)/, ''); return c ? '$' + c : ''; };
 const pname = p => p.name.trim() || 'unnamed';
 function buildText() {
   let head = state.name || 'poker';
@@ -277,6 +291,8 @@ function buildText() {
   const times = s && e ? `${s} - ${e}` : s ? `${s} - ?` : e ? `? - ${e}` : '';
   const lines = [head];
   if (times) lines.push(times);
+  const sb = fmtBlind(state.sb), bb = fmtBlind(state.bb);
+  if (sb || bb) lines.push(`${sb || '?'}/${bb || '?'}`);
   lines.push('');
   state.players.forEach((p, i) => {
     const ins = p.buyIns.map(b => num(b.amount) + (p.host ? 'b' : CODES[b.method] || '')).join(' ');
@@ -311,6 +327,8 @@ document.addEventListener('input', e => {
   const t = e.target, f = t.dataset.f;
   if (t.id === 'gameName') state.name = t.value;
   else if (t.id === 'gameDate') state.date = t.value;
+  else if (t.id === 'gameSB') state.sb = t.value;
+  else if (t.id === 'gameBB') state.bb = t.value;
   else if (t.id === 'gameStart') state.start = t.value;
   else if (t.id === 'gameEnd') state.end = t.value;
   else if (t.id === 'settleToggle') state.settle = t.checked;
@@ -376,7 +394,7 @@ $('#copy').onclick = async () => {
 };
 
 function sync() { $('#gameName').value = state.name; $('#gameDate').value = state.date;
-  $('#gameStart').value = state.start || ''; $('#gameEnd').value = state.end || ''; $('#settleToggle').checked = state.settle !== false; $('#defaultBuyIn').value = state.defaultBuyIn; }
+  $('#gameSB').value = state.sb || ''; $('#gameBB').value = state.bb || ''; $('#gameStart').value = state.start || ''; $('#gameEnd').value = state.end || ''; $('#settleToggle').checked = state.settle !== false; $('#defaultBuyIn').value = state.defaultBuyIn; }
 sync(); render();
 </script>
 </body>
