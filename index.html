@@ -104,9 +104,10 @@ function load() {
     const d = JSON.parse(localStorage.getItem(STORE));
     if (!d || !Array.isArray(d.players)) return null;
     const base = fresh();
+    let seenBank = false;
     return Object.assign(base, d, { players: d.players.map(p => {
       const bi = Array.isArray(p.buyIns) && p.buyIns.length ? p.buyIns : [{}];
-      return { id: p.id || id(), name: p.name || '', host: !!p.host, out: p.out == null ? '0' : p.out,
+      return { id: p.id || id(), name: p.name || '', host: p.host && !seenBank ? (seenBank = true) : false, out: p.out == null ? '0' : p.out,
         buyIns: bi.map(x => ({ id: x.id || id(), amount: x.amount == null ? 50 : x.amount, method: x.method || 'Unpaid' })) };
     }) });
   } catch (e) { return null; }
@@ -182,7 +183,8 @@ function render() {
         <label class="text-sm flex items-center gap-2">Buy-out $
           <input data-f="out" type="number" min="0" step="any" inputmode="decimal" class="w-28" placeholder="0" value="${esc(p.out)}">
         </label>
-        <label class="text-sm flex items-center gap-1.5 cursor-pointer"><input type="checkbox" data-f="host" class="w-4 h-4 p-0 accent-emerald-700" ${p.host ? 'checked' : ''}> Bank</label>
+        ${(() => { const locked = !p.host && state.players.some(x => x.host);
+        return `<label class="text-sm flex items-center gap-1.5 ${locked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}" ${locked ? 'title="Only one bank allowed. Uncheck the current bank first."' : ''}><input type="checkbox" data-f="host" class="w-4 h-4 p-0 accent-emerald-700" ${p.host ? 'checked' : ''} ${locked ? 'disabled' : ''}> Bank</label>`; })()}
         <button data-act="rmPlayer" class="text-stone-400 hover:text-red-600 text-sm px-2" aria-label="Remove player">Remove</button>
       </div>
       <div class="mt-3 space-y-2">
@@ -315,7 +317,10 @@ document.addEventListener('input', e => {
   else if (t.id === 'defaultBuyIn') state.defaultBuyIn = num(t.value);
   else if (f) {
     const p = state.players.find(x => x.id === t.closest('[data-pid]').dataset.pid);
-    if (f === 'host') { p.host = t.checked; render(); return; }
+    if (f === 'host') {
+      if (t.checked && state.players.some(x => x.host && x !== p)) { t.checked = false; return; }
+      p.host = t.checked; render(); return;
+    }
     if (f === 'name' || f === 'out') p[f] = t.value;
     else { const b = p.buyIns.find(x => x.id === t.closest('[data-bid]').dataset.bid); b[f] = t.value;
       if (f === 'method') t.className = 'flex-1 max-w-[9rem] ' + payClass(t.value); }
