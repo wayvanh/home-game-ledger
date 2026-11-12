@@ -16,6 +16,8 @@
     background:repeating-conic-gradient(rgba(255,255,255,.85) 0 22deg, transparent 22deg 60deg);
     -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
             mask:radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px)); }
+  .paidout { opacity:.5; filter:grayscale(1); transition:opacity .15s; }
+  .paidout:hover, .paidout:focus-within { opacity:1; filter:none; }
   pre { white-space:pre-wrap; word-break:break-word; }
 </style>
 </head>
@@ -87,7 +89,7 @@
   <section class="card rounded-2xl p-5 mt-5">
     <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
       <div><h2 class="font-bold text-lg">Copyable summary</h2>
-        <p class="text-xs text-stone-500">Letter after a buy-in = how it was paid: v venmo, z zelle, c cash, o other, b bank. No letter = unpaid. Number in parentheses = buy-out.</p></div>
+        <p class="text-xs text-stone-500">Letter after a buy-in or buy-out = how it was paid: v venmo, z zelle, c cash, o other, b bank, d done (buy-out only). No letter = unpaid. Number in parentheses = buy-out (letter = how the player was paid out).</p></div>
       <button id="copy" class="bg-stone-900 hover:bg-stone-700 text-white rounded-lg px-4 py-2 text-sm font-semibold">Copy text</button>
     </div>
     <pre id="output" class="bg-white border border-stone-200 rounded-xl p-4 text-sm font-mono leading-relaxed"></pre>
@@ -96,6 +98,7 @@
 
 <script>
 const METHODS = ['Unpaid', 'Venmo', 'Zelle', 'Cash', 'Other'];
+const OUT_METHODS = [...METHODS, 'Done']; // buy-outs can also be marked Done
 const payClass = m => m === 'Unpaid'
   ? 'bg-red-100 text-red-900 border-red-400 font-semibold'
   : 'bg-emerald-100 text-emerald-900 border-emerald-500 font-semibold';
@@ -112,7 +115,7 @@ function fresh() {
     players: [newPlayer(), newPlayer()] };
 }
 function newPlayer(def = 50) {
-  return { id: id(), name: '', buyIns: [{ id: id(), amount: def, method: 'Unpaid' }], out: '0' };
+  return { id: id(), name: '', buyIns: [{ id: id(), amount: def, method: 'Unpaid' }], out: '0', outMethod: 'Unpaid' };
 }
 function load() {
   try {
@@ -122,7 +125,7 @@ function load() {
     let seenBank = false;
     return Object.assign(base, d, { players: d.players.map(p => {
       const bi = Array.isArray(p.buyIns) && p.buyIns.length ? p.buyIns : [{}];
-      return { id: p.id || id(), name: p.name || '', host: p.host && !seenBank ? (seenBank = true) : false, out: p.out == null ? '0' : p.out,
+      return { id: p.id || id(), name: p.name || '', host: p.host && !seenBank ? (seenBank = true) : false, out: p.out == null ? '0' : p.out, outMethod: OUT_METHODS.includes(p.outMethod) ? p.outMethod : 'Unpaid',
         buyIns: bi.map(x => ({ id: x.id || id(), amount: x.amount == null ? 50 : x.amount, method: x.method || 'Unpaid' })) };
     }) });
   } catch (e) { return null; }
@@ -145,7 +148,8 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 const playerIn = p => p.buyIns.reduce((s, b) => s + num(b.amount), 0);
 // Bank owes = buy-out minus any buy-ins this player has not paid yet.
 const unpaidIn = p => p.host ? 0 : p.buyIns.filter(b => b.method === 'Unpaid').reduce((t, b) => t + num(b.amount), 0);
-const owedByBank = p => Math.round((num(p.out) - unpaidIn(p)) * 100) / 100;
+const paidOut = p => !p.host && !!p.outMethod && p.outMethod !== 'Unpaid';
+const owedByBank = p => Math.round(((paidOut(p) ? 0 : num(p.out)) - unpaidIn(p)) * 100) / 100;
 const owePhrase = p => {
   if (p.host || !hasOut(p)) return '';
   const v = owedByBank(p);
@@ -198,6 +202,9 @@ function render() {
         <label class="text-sm flex items-center gap-2">Buy-out $
           <input data-f="out" type="number" min="0" step="any" inputmode="decimal" class="w-28" placeholder="0" value="${esc(p.out)}">
         </label>
+        ${p.host ? '' : `<select data-f="outMethod" class="w-28 ${payClass(p.outMethod)}" aria-label="Buy-out payment method" title="How this player was paid out">
+          ${OUT_METHODS.map(m => `<option ${m === p.outMethod ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>`}
         ${(() => { const locked = !p.host && state.players.some(x => x.host);
         return `<label class="text-sm flex items-center gap-1.5 ${locked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}" ${locked ? 'title="Only one bank allowed. Uncheck the current bank first."' : ''}><input type="checkbox" data-f="host" class="w-4 h-4 p-0 accent-emerald-700" ${p.host ? 'checked' : ''} ${locked ? 'disabled' : ''}> Bank</label>`; })()}
         <button data-act="rmPlayer" class="text-stone-400 hover:text-red-600 text-sm px-2" aria-label="Remove player">Remove</button>
@@ -229,6 +236,7 @@ function update() {
     if (!el) return;
     el.querySelector('[data-r=in]').textContent = money(playerIn(p));
     el.querySelector('[data-r=owe]').textContent = owePhrase(p);
+    el.classList.toggle('paidout', paidOut(p));
     const n = el.querySelector('[data-r=net]');
     if (hasOut(p)) {
       const net = num(p.out) - playerIn(p);
@@ -274,7 +282,7 @@ function update() {
   save();
 }
 
-const CODES = { Venmo: 'v', Zelle: 'z', Cash: 'c', Other: 'o' };
+const CODES = { Venmo: 'v', Zelle: 'z', Cash: 'c', Other: 'o', Done: 'd' };
 function fmtTime(t) {
   if (!t) return '';
   const [h, m] = t.split(':').map(Number);
@@ -299,7 +307,7 @@ function buildText() {
   lines.push('');
   state.players.forEach((p, i) => {
     const ins = p.buyIns.map(b => num(b.amount) + (p.host ? 'b' : CODES[b.method] || '')).join(' ');
-    lines.push(`${i + 1}. ${pname(p)}${p.host ? ' [bank]' : ''} ${ins} (${hasOut(p) ? num(p.out) : '?'})`);
+    lines.push(`${i + 1}. ${pname(p)}${p.host ? ' [bank]' : ''} ${ins} (${hasOut(p) ? num(p.out) + (p.host ? '' : CODES[p.outMethod] || '') : '?'})`);
   });
   if (!state.players.length) return lines.join('\n');
 
@@ -343,6 +351,7 @@ document.addEventListener('input', e => {
       p.host = t.checked; render(); return;
     }
     if (f === 'name' || f === 'out') p[f] = t.value;
+    else if (f === 'outMethod') { p.outMethod = t.value; t.className = 'w-28 ' + payClass(t.value); }
     else { const b = p.buyIns.find(x => x.id === t.closest('[data-bid]').dataset.bid); b[f] = t.value;
       if (f === 'method') t.className = 'flex-1 max-w-[9rem] ' + payClass(t.value); }
   } else return;
