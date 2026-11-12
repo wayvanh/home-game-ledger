@@ -64,6 +64,7 @@
 
   <div class="flex gap-3 mt-4">
     <button id="addPlayer" class="bg-amber-400 hover:bg-amber-300 text-stone-900 font-semibold rounded-lg px-4 py-2">Add player</button>
+    <button id="undoDelete" hidden class="border border-amber-300 text-amber-200 hover:bg-white/10 rounded-lg px-4 py-2 text-sm font-semibold">Undo delete</button>
     <button id="reset" class="border border-sky-200/40 hover:bg-white/10 rounded-lg px-4 py-2 text-sm">Clear game</button>
   </div>
 
@@ -199,15 +200,14 @@ function render() {
     el.innerHTML = `
       <div class="flex gap-3 items-center flex-wrap">
         <input data-f="name" class="flex-1 min-w-[10rem] font-semibold text-lg" placeholder="Player ${i + 1} name" value="${esc(p.name)}">
+        ${(() => { const locked = !p.host && state.players.some(x => x.host);
+        return `<label class="text-sm flex items-center gap-1.5 ${locked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}" ${locked ? 'title="Only one bank allowed. Uncheck the current bank first."' : ''}><input type="checkbox" data-f="host" class="w-4 h-4 p-0 accent-emerald-700" ${p.host ? 'checked' : ''} ${locked ? 'disabled' : ''}> Bank</label>`; })()}
         <label class="text-sm flex items-center gap-2">Buy-out $
           <input data-f="out" type="number" min="0" step="any" inputmode="decimal" class="w-28" placeholder="0" value="${esc(p.out)}">
         </label>
         ${p.host ? '' : `<select data-f="outMethod" class="w-28 ${payClass(p.outMethod)}" aria-label="Buy-out payment method" title="How this player was paid out">
           ${OUT_METHODS.map(m => `<option ${m === p.outMethod ? 'selected' : ''}>${m}</option>`).join('')}
         </select>`}
-        ${(() => { const locked = !p.host && state.players.some(x => x.host);
-        return `<label class="text-sm flex items-center gap-1.5 ${locked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}" ${locked ? 'title="Only one bank allowed. Uncheck the current bank first."' : ''}><input type="checkbox" data-f="host" class="w-4 h-4 p-0 accent-emerald-700" ${p.host ? 'checked' : ''} ${locked ? 'disabled' : ''}> Bank</label>`; })()}
-        <button data-act="rmPlayer" class="text-stone-400 hover:text-red-600 text-sm px-2" aria-label="Remove player">Remove</button>
       </div>
       <div class="mt-3 space-y-2">
         ${p.buyIns.map((b, j) => `
@@ -222,7 +222,10 @@ function render() {
           </div>`).join('')}
       </div>
       <div class="mt-3 flex items-center justify-between flex-wrap gap-2">
-        <button data-act="addBuyIn" class="text-sm font-semibold text-emerald-800 hover:text-emerald-600">+ Add rebuy</button>
+        <div class="flex items-center gap-4">
+          <button data-act="addBuyIn" class="text-sm font-semibold text-emerald-800 hover:text-emerald-600">+ Add rebuy</button>
+          <button data-act="rmPlayer" class="text-sm text-stone-400 hover:text-red-600">Delete player</button>
+        </div>
         <div class="text-sm text-stone-600"><span data-r="in"></span> in &middot; <span data-r="net" class="font-bold"></span><span data-r="owe" class="block text-right text-xs font-semibold text-amber-800"></span></div>
       </div>`;
     wrap.appendChild(el);
@@ -277,6 +280,9 @@ function update() {
   $('#methods').innerHTML = Object.entries(byMethod).filter(([, v]) => v > 0)
     .map(([m, v]) => `<span class="border rounded-full px-3 py-1 ${payClass(m)}">${m}: <b>${money(v)}</b></span>`).join('');
 
+  const undo = $('#undoDelete');
+  undo.hidden = !deleted.length;
+  if (deleted.length) undo.title = 'Bring back ' + pname(deleted[deleted.length - 1].p) + (deleted.length > 1 ? ` (${deleted.length} deleted)` : '');
   renderSettle();
   $('#output').textContent = buildText(tIn, tOut, pending, diff);
   save();
@@ -358,15 +364,33 @@ document.addEventListener('input', e => {
   update();
 });
 
+let delPending = null, delTimer = null;
+const deleted = []; // most recently deleted players, newest last
+function cancelDelete() {
+  clearTimeout(delTimer);
+  const b = delPending && document.querySelector(`[data-pid="${delPending}"] [data-act=rmPlayer]`);
+  if (b) { b.textContent = 'Delete player'; b.classList.remove('text-red-600', 'font-bold'); b.classList.add('text-stone-400'); }
+  delPending = null;
+}
 document.addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
+  if (!btn || btn.dataset.act !== 'rmPlayer') cancelDelete();
   if (!btn) return;
   const card = btn.closest('[data-pid]');
   const p = card && state.players.find(x => x.id === card.dataset.pid);
   const act = btn.dataset.act;
+  if (act === 'rmPlayer' && delPending !== p.id) { // first click: ask to confirm
+    cancelDelete();
+    delPending = p.id;
+    btn.textContent = 'Click again to delete';
+    btn.classList.remove('text-stone-400'); btn.classList.add('text-red-600', 'font-bold');
+    delTimer = setTimeout(cancelDelete, 3500);
+    return;
+  }
+  if (act === 'rmPlayer') cancelDelete();
   if (act === 'addBuyIn') p.buyIns.push({ id: id(), amount: state.defaultBuyIn, method: 'Unpaid' });
   if (act === 'rmBuyIn') p.buyIns = p.buyIns.filter(b => b.id !== btn.closest('[data-bid]').dataset.bid);
-  if (act === 'rmPlayer') state.players = state.players.filter(x => x !== p);
+  if (act === 'rmPlayer') { deleted.push({ p, idx: state.players.indexOf(p) }); state.players = state.players.filter(x => x !== p); }
   render();
   if (act === 'addBuyIn') { const ins = document.querySelectorAll(`[data-pid="${p.id}"] [data-f=amount]`); ins[ins.length - 1].focus(); ins[ins.length - 1].select(); }
 });
@@ -378,6 +402,13 @@ $('#addPlayer').onclick = () => {
   names[names.length - 1].focus();
 };
 let resetTimer = null;
+$('#undoDelete').onclick = () => {
+  const d = deleted.pop();
+  if (!d) return;
+  if (d.p.host && state.players.some(x => x.host)) d.p.host = false; // only one bank allowed
+  state.players.splice(Math.min(d.idx, state.players.length), 0, d.p);
+  render();
+};
 $('#reset').onclick = () => {
   const b = $('#reset');
   if (!resetTimer) {
@@ -387,7 +418,7 @@ $('#reset').onclick = () => {
     return;
   }
   cancelReset();
-  state = fresh(); sync(); render();
+  state = fresh(); deleted.length = 0; sync(); render();
 };
 function cancelReset() {
   clearTimeout(resetTimer); resetTimer = null;
