@@ -8,8 +8,8 @@
 <style>
   body { background:#0f2f5c; background-image:radial-gradient(circle at 50% -10%, #1d4f94 0%, #0f2f5c 60%); min-height:100vh; }
   .card { background:#fbf8f1; color:#1d2a24; }
-  input, select { background:#fff; border:1px solid #d9d2c0; border-radius:.5rem; padding:.4rem .6rem; min-width:0; }
-  input:focus, select:focus, button:focus-visible { outline:2px solid #c8372d; outline-offset:1px; }
+  input, select, textarea { background:#fff; border:1px solid #d9d2c0; border-radius:.5rem; padding:.4rem .6rem; min-width:0; }
+  input:focus, select:focus, textarea:focus, button:focus-visible { outline:2px solid #c8372d; outline-offset:1px; }
   input[type=number]::-webkit-inner-spin-button { display:none; }
   .chip { position:relative; width:2.25rem; height:2.25rem; border-radius:9999px; background:#111; box-shadow:0 0 0 3px #111; }
   .chip::before { content:''; position:absolute; inset:0; border-radius:9999px;
@@ -31,6 +31,18 @@
       <p class="text-sky-100/80 text-sm">Track buy-ins, payments and cash-outs. Check the table adds up. <span id="saveStatus" class="text-sky-200/60"></span></p>
     </div>
   </header>
+
+  <details id="importBox" class="card rounded-2xl p-5 mb-5">
+    <summary class="font-bold text-lg cursor-pointer">Import from text</summary>
+    <p class="text-xs text-stone-500 mt-2">Paste a summary in the same format as the copied text. Players, buy-ins, buy-outs, bank, done, and (if present) the game name, date, times and blinds are filled in.</p>
+    <textarea id="importText" rows="8" spellcheck="false" class="w-full mt-3 font-mono text-sm" placeholder="1. maya 100 (22)"></textarea>
+    <div class="flex flex-wrap items-center gap-3 mt-3">
+      <button id="importBtn" class="bg-amber-400 hover:bg-amber-300 text-stone-900 font-semibold rounded-lg px-4 py-2 text-sm">Import</button>
+      <label class="text-sm flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="importAppend" class="w-4 h-4 p-0 accent-emerald-700"> Add to existing players instead of replacing them</label>
+      <button id="undoImport" hidden class="border border-stone-400 hover:bg-stone-100 rounded-lg px-3 py-2 text-sm font-semibold">Undo import</button>
+    </div>
+    <p id="importMsg" class="text-sm mt-2" aria-live="polite"></p>
+  </details>
 
   <section class="card rounded-2xl p-4 sm:p-5 mb-5 space-y-3">
     <label class="block text-sm font-medium">Game name
@@ -99,7 +111,6 @@
 
 <script>
 const METHODS = ['Unpaid', 'Venmo', 'Zelle', 'Cash', 'Other'];
-const OUT_METHODS = [...METHODS, 'Done']; // buy-outs can also be marked Done
 const payClass = m => m === 'Unpaid'
   ? 'bg-red-100 text-red-900 border-red-400 font-semibold'
   : 'bg-emerald-100 text-emerald-900 border-emerald-500 font-semibold';
@@ -116,7 +127,7 @@ function fresh() {
     players: [newPlayer(), newPlayer()] };
 }
 function newPlayer(def = 50) {
-  return { id: id(), name: '', buyIns: [{ id: id(), amount: def, method: 'Unpaid' }], out: '0', outMethod: 'Unpaid' };
+  return { id: id(), name: '', buyIns: [{ id: id(), amount: def, method: 'Unpaid' }], out: '0', outMethod: 'Unpaid', done: false };
 }
 function load() {
   try {
@@ -126,7 +137,7 @@ function load() {
     let seenBank = false;
     return Object.assign(base, d, { players: d.players.map(p => {
       const bi = Array.isArray(p.buyIns) && p.buyIns.length ? p.buyIns : [{}];
-      return { id: p.id || id(), name: p.name || '', host: p.host && !seenBank ? (seenBank = true) : false, out: p.out == null ? '0' : p.out, outMethod: OUT_METHODS.includes(p.outMethod) ? p.outMethod : 'Unpaid',
+      return { id: p.id || id(), name: p.name || '', host: p.host && !seenBank ? (seenBank = true) : false, out: p.out == null ? '0' : p.out, done: !!p.done || p.outMethod === 'Done', outMethod: METHODS.includes(p.outMethod) ? p.outMethod : 'Unpaid',
         buyIns: bi.map(x => ({ id: x.id || id(), amount: x.amount == null ? 50 : x.amount, method: x.method || 'Unpaid' })) };
     }) });
   } catch (e) { return null; }
@@ -154,9 +165,10 @@ const owedByBank = p => Math.round(((paidOut(p) ? 0 : num(p.out)) - unpaidIn(p))
 const owePhrase = p => {
   if (p.host || !hasOut(p)) return '';
   const v = owedByBank(p);
-  return v > 0 ? `bank owes ${v}` : v < 0 ? `owes bank ${Math.abs(v)}` : 'settled';
+  return v > 0 ? `bank owes ${n2(v)}` : v < 0 ? `owes bank ${n2(Math.abs(v))}` : 'settled';
 };
 const r2 = x => Math.round(x * 100) / 100;
+const n2 = v => { v = Math.round(v * 100) / 100; return Number.isInteger(v) ? String(v) : v.toFixed(2); };
 function settlements() {
   const P = state.players;
   if (P.length < 2) return { note: 'Add at least two players.' };
@@ -202,11 +214,12 @@ function render() {
         <input data-f="name" class="flex-1 min-w-[10rem] font-semibold text-lg" placeholder="Player ${i + 1} name" value="${esc(p.name)}">
         ${(() => { const locked = !p.host && state.players.some(x => x.host);
         return `<label class="text-sm flex items-center gap-1.5 ${locked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}" ${locked ? 'title="Only one bank allowed. Uncheck the current bank first."' : ''}><input type="checkbox" data-f="host" class="w-4 h-4 p-0 accent-emerald-700" ${p.host ? 'checked' : ''} ${locked ? 'disabled' : ''}> Bank</label>`; })()}
+        ${p.host ? '' : `<label class="text-sm flex items-center gap-1.5 cursor-pointer" title="Mark this player as fully settled"><input type="checkbox" data-f="done" class="w-4 h-4 p-0 accent-emerald-700" ${p.done ? 'checked' : ''}> Done</label>`}
         <label class="text-sm flex items-center gap-2">Buy-out $
           <input data-f="out" type="number" min="0" step="any" inputmode="decimal" class="w-28" placeholder="0" value="${esc(p.out)}">
         </label>
         ${p.host ? '' : `<select data-f="outMethod" class="w-28 ${payClass(p.outMethod)}" aria-label="Buy-out payment method" title="How this player was paid out">
-          ${OUT_METHODS.map(m => `<option ${m === p.outMethod ? 'selected' : ''}>${m}</option>`).join('')}
+          ${METHODS.map(m => `<option ${m === p.outMethod ? 'selected' : ''}>${m}</option>`).join('')}
         </select>`}
       </div>
       <div class="mt-3 space-y-2">
@@ -239,7 +252,7 @@ function update() {
     if (!el) return;
     el.querySelector('[data-r=in]').textContent = money(playerIn(p));
     el.querySelector('[data-r=owe]').textContent = owePhrase(p);
-    el.classList.toggle('paidout', paidOut(p));
+    el.classList.toggle('paidout', paidOut(p) || (!p.host && !!p.done));
     const n = el.querySelector('[data-r=net]');
     if (hasOut(p)) {
       const net = num(p.out) - playerIn(p);
@@ -288,7 +301,7 @@ function update() {
   save();
 }
 
-const CODES = { Venmo: 'v', Zelle: 'z', Cash: 'c', Other: 'o', Done: 'd' };
+const CODES = { Venmo: 'v', Zelle: 'z', Cash: 'c', Other: 'o' };
 function fmtTime(t) {
   if (!t) return '';
   const [h, m] = t.split(':').map(Number);
@@ -312,8 +325,8 @@ function buildText() {
   if (sb || bb) lines.push(`${sb || '?'}/${bb || '?'}`);
   lines.push('');
   state.players.forEach((p, i) => {
-    const ins = p.buyIns.map(b => num(b.amount) + (p.host ? 'b' : CODES[b.method] || '')).join(' ');
-    lines.push(`${i + 1}. ${pname(p)}${p.host ? ' [bank]' : ''} ${ins} (${hasOut(p) ? num(p.out) + (p.host ? '' : CODES[p.outMethod] || '') : '?'})`);
+    const ins = p.buyIns.map(b => n2(num(b.amount)) + (p.host ? 'b' : CODES[b.method] || '')).join(' ');
+    lines.push(`${i + 1}. ${pname(p)}${p.host ? ' [bank]' : ''} ${ins} (${hasOut(p) ? n2(num(p.out)) + (p.host ? '' : CODES[p.outMethod] || (p.done ? 'd' : '')) : '?'})`);
   });
   if (!state.players.length) return lines.join('\n');
 
@@ -321,23 +334,113 @@ function buildText() {
   const tOut = state.players.reduce((t, p) => t + num(p.out), 0);
   const pending = state.players.filter(p => !hasOut(p)).length;
   const diff = Math.round((tIn - tOut) * 100) / 100;
-  lines.push('', `Total buy-ins: ${tIn}`, `Total buy-outs: ${tOut}`);
+  lines.push('', `Total buy-ins: ${n2(tIn)}`, `Total buy-outs: ${n2(tOut)}`);
   lines.push(pending ? `Zero sum: pending (${pending} buy-out${pending > 1 ? 's' : ''} missing)`
-    : diff === 0 ? 'Zero sum: yes' : `Zero sum: no (off by ${diff > 0 ? '+' : '-'}${Math.abs(diff)})`);
+    : diff === 0 ? 'Zero sum: yes' : `Zero sum: no (off by ${diff > 0 ? '+' : '-'}${n2(Math.abs(diff))})`);
   lines.push('', 'Profit / loss');
   state.players.forEach(p => {
     const net = Math.round((num(p.out) - playerIn(p)) * 100) / 100;
     const owe = owePhrase(p);
-    lines.push(`${pname(p)}: ` + (hasOut(p) ? (net > 0 ? '+' : net < 0 ? '-' : '') + Math.abs(net) : '?') + (owe ? ` (${owe})` : ''));
+    lines.push(`${pname(p)}: ` + (hasOut(p) ? (net > 0 ? '+' : net < 0 ? '-' : '') + n2(Math.abs(net)) : '?') + (owe ? ` (${owe})` : ''));
   });
   const sr = settlements();
   if (state.settle !== false && sr.list) {
     lines.push('', 'Settle up');
     if (!sr.list.length) lines.push('No payments needed');
-    sr.list.forEach(x => lines.push(`${x.from} pays ${x.to} ${x.amt}`));
+    sr.list.forEach(x => lines.push(`${x.from} pays ${x.to} ${n2(x.amt)}`));
   }
   return lines.join('\n');
 }
+
+// ---------- Import ----------
+const CODE_TO_METHOD = { v: 'Venmo', z: 'Zelle', c: 'Cash', o: 'Other' };
+function to24(t) {
+  const m = /^(\d{1,2})(?::(\d{2}))?\s*([ap])m$/i.exec(t.trim());
+  if (!m) return '';
+  const h = (+m[1] % 12) + (m[3].toLowerCase() === 'p' ? 12 : 0);
+  return String(h).padStart(2, '0') + ':' + (m[2] || '00');
+}
+function parseImport(text) {
+  const res = { players: [], set: {} };
+  const T = '(\\?|\\d{1,2}(?::\\d{2})?\\s*[ap]m)', B = '(\\?|\\.?\\d[\\d.]*)';
+  const timeRe = new RegExp(`^${T}\\s*-\\s*${T}$`, 'i');
+  const blindRe = new RegExp(`^\\$?${B}\\s*/\\s*\\$?${B}$`);
+  const headRe = /^(.*?)\s*(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s+)?(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/i;
+  const playerRe = /^\d+[.)]\s+(.+)\s+\((\?|\d*\.?\d+)([a-z]?)\)$/i;
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  let seenBank = false, nameOnly = '', m;
+  lines.forEach((line, i) => {
+    if ((m = playerRe.exec(line))) {
+      const tokens = m[1].split(/\s+/), amounts = [];
+      while (tokens.length > 1 && /^\d*\.?\d+[a-z]?$/i.test(tokens[tokens.length - 1])) amounts.unshift(tokens.pop());
+      const nameStr = tokens.join(' ');
+      const host = /\[bank\]/i.test(nameStr) && !seenBank;
+      if (host) seenBank = true;
+      let name = nameStr.replace(/\[bank\]/ig, '').trim();
+      if (name.toLowerCase() === 'unnamed') name = '';
+      const buyIns = (amounts.length ? amounts : ['0']).map(t => {
+        const x = /^(\d*\.?\d+)([a-z]?)$/i.exec(t);
+        return { id: id(), amount: parseFloat(x[1]), method: CODE_TO_METHOD[x[2].toLowerCase()] || 'Unpaid' };
+      });
+      const code = m[3].toLowerCase();
+      res.players.push({ id: id(), name, host, buyIns, out: m[2] === '?' ? '' : m[2],
+        outMethod: CODE_TO_METHOD[code] || 'Unpaid', done: code === 'd' });
+    } else if ((m = timeRe.exec(line))) {
+      res.set.start = m[1] === '?' ? '' : to24(m[1]);
+      res.set.end = m[2] === '?' ? '' : to24(m[2]);
+    } else if ((m = blindRe.exec(line))) {
+      res.set.sb = m[1] === '?' ? '' : m[1];
+      res.set.bb = m[2] === '?' ? '' : m[2];
+    } else if (i === 0) {
+      if ((m = headRe.exec(line))) {
+        if (m[1].trim()) res.set.name = m[1].trim();
+        const y = m[4].length === 2 ? 2000 + +m[4] : +m[4];
+        res.set.date = `${y}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+      } else if (!/^(total|zero|profit|settle)/i.test(line) && line.length <= 40) nameOnly = line;
+    }
+  });
+  if (nameOnly && res.players.length && res.set.name === undefined) res.set.name = nameOnly;
+  return res;
+}
+(function randomPlaceholder() {
+  const pool = ['maya', 'omar', 'priya', 'liam', 'sofia', 'noah', 'chen', 'ava', 'diego', 'zoe', 'ethan', 'nina', 'raj', 'lena', 'theo', 'iris'];
+  const n = []; while (n.length < 3) { const x = pool[Math.floor(Math.random() * pool.length)]; if (!n.includes(x)) n.push(x); }
+  $('#importText').placeholder = ['poker Fri 11/6/26', '12:30 am - 7 am', '$.25/$.25', '',
+    `1. ${n[0]} 100 (22)`, `2. ${n[1]} 10v 10v 10v (0d)`, `3. ${n[2]} [bank] 100b 100b (350.50)`].join('\n');
+})();
+let importBackup = null;
+$('#importBtn').onclick = () => {
+  const msg = $('#importMsg'), r = parseImport($('#importText').value);
+  if (!r.players.length && !Object.keys(r.set).length) {
+    msg.className = 'text-sm mt-2 text-red-700';
+    msg.textContent = 'Nothing recognized. Expected lines like "1. jack 100 (22)".';
+    return;
+  }
+  importBackup = JSON.stringify(state);
+  Object.assign(state, r.set);
+  if (r.players.length) {
+    if ($('#importAppend').checked) {
+      const hasBank = state.players.some(p => p.host);
+      r.players.forEach(p => { if (hasBank) p.host = false; });
+      state.players.push(...r.players);
+    } else state.players = r.players;
+  }
+  sync(); render();
+  const bits = [];
+  if (r.players.length) bits.push(`${r.players.length} player${r.players.length > 1 ? 's' : ''}`);
+  if (Object.keys(r.set).length) bits.push('game settings');
+  msg.className = 'text-sm mt-2 text-emerald-800';
+  msg.textContent = `Imported ${bits.join(' and ')}.`;
+  $('#undoImport').hidden = false;
+};
+$('#undoImport').onclick = () => {
+  if (!importBackup) return;
+  state = JSON.parse(importBackup); importBackup = null;
+  sync(); render();
+  $('#undoImport').hidden = true;
+  $('#importMsg').className = 'text-sm mt-2 text-stone-600';
+  $('#importMsg').textContent = 'Import undone.';
+};
 
 // Events: text edits update state without re-rendering so focus is kept.
 document.addEventListener('input', e => {
@@ -357,6 +460,7 @@ document.addEventListener('input', e => {
       p.host = t.checked; render(); return;
     }
     if (f === 'name' || f === 'out') p[f] = t.value;
+    else if (f === 'done') p.done = t.checked;
     else if (f === 'outMethod') { p.outMethod = t.value; t.className = 'w-28 ' + payClass(t.value); }
     else { const b = p.buyIns.find(x => x.id === t.closest('[data-bid]').dataset.bid); b[f] = t.value;
       if (f === 'method') t.className = 'flex-1 max-w-[9rem] ' + payClass(t.value); }
