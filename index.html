@@ -102,7 +102,7 @@
   <section class="card rounded-2xl p-5 mt-5">
     <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
       <div><h2 class="font-bold text-lg">Copyable summary</h2>
-        <p class="text-xs text-stone-500">Letter after a buy-in or buy-out = how it was paid: v venmo, z zelle, c cash, o other, b bank, d done (buy-out only). No letter = unpaid. Number in parentheses = buy-out (letter = how the player was paid out).</p></div>
+        <p class="text-xs text-stone-500">Letter after a buy-in or buy-out = how it was paid: v venmo, z zelle, c cash, o other, _ credit (buy-in only), b bank, d done (buy-out only). No letter = unpaid. Number in parentheses = buy-out (letter = how the player was paid out).</p></div>
       <button id="copy" class="bg-stone-900 hover:bg-stone-700 text-white rounded-lg px-4 py-2 text-sm font-semibold">Copy text</button>
     </div>
     <pre id="output" class="bg-white border border-stone-200 rounded-xl p-4 text-sm font-mono leading-relaxed"></pre>
@@ -110,10 +110,13 @@
 </div>
 
 <script>
-const METHODS = ['Unpaid', 'Venmo', 'Zelle', 'Cash', 'Other'];
+const METHODS = ['Unpaid', 'Venmo', 'Zelle', 'Cash', 'Other'];            // buy-out (payout) methods
+const BUYIN_METHODS = ['Unpaid', 'Credit', 'Venmo', 'Zelle', 'Cash', 'Other']; // buy-ins may also be Credit
 const payClass = m => m === 'Unpaid'
   ? 'bg-red-100 text-red-900 border-red-400 font-semibold'
-  : 'bg-emerald-100 text-emerald-900 border-emerald-500 font-semibold';
+  : m === 'Credit'
+    ? 'bg-yellow-100 text-yellow-900 border-yellow-500 font-semibold'
+    : 'bg-emerald-100 text-emerald-900 border-emerald-500 font-semibold';
 const STORE = 'pokerLedger.v1';
 let uid = 0;
 const id = () => 'i' + Date.now().toString(36) + (uid++);
@@ -123,7 +126,7 @@ let state = load() || fresh();
 
 function fresh() {
   const d = new Date(), pad = n => String(n).padStart(2, '0');
-  return { name: 'poker', date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, start: '', end: '', sb: '.25', bb: '.25', defaultBuyIn: 50,
+  return { name: 'poker', date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, start: '', end: '', sb: '.25', bb: '.25', settled: {}, defaultBuyIn: 50,
     players: [newPlayer(), newPlayer()] };
 }
 function newPlayer(def = 50) {
@@ -134,6 +137,7 @@ function load() {
     const d = JSON.parse(localStorage.getItem(STORE));
     if (!d || !Array.isArray(d.players)) return null;
     const base = fresh();
+    if (!d.settled || typeof d.settled !== 'object') d.settled = {};
     let seenBank = false;
     return Object.assign(base, d, { players: d.players.map(p => {
       const bi = Array.isArray(p.buyIns) && p.buyIns.length ? p.buyIns : [{}];
@@ -161,7 +165,10 @@ const playerIn = p => p.buyIns.reduce((s, b) => s + num(b.amount), 0);
 // Bank owes = buy-out minus any buy-ins this player has not paid yet.
 const unpaidIn = p => p.host ? 0 : p.buyIns.filter(b => b.method === 'Unpaid').reduce((t, b) => t + num(b.amount), 0);
 const paidOut = p => !p.host && !!p.outMethod && p.outMethod !== 'Unpaid';
-const owedByBank = p => Math.round(((paidOut(p) ? 0 : num(p.out)) - unpaidIn(p)) * 100) / 100;
+const creditIn = p => p.host ? 0 : p.buyIns.filter(b => b.method === 'Credit').reduce((t, b) => t + num(b.amount), 0);
+// Credit buy-ins are netted against the buy-out. Once a payout method is chosen, the difference
+// (buy-out minus credit) is assumed to have been paid out or requested, so only truly Unpaid buy-ins remain.
+const owedByBank = p => Math.round(((paidOut(p) ? 0 : num(p.out) - creditIn(p)) - unpaidIn(p)) * 100) / 100;
 const owePhrase = p => {
   if (p.host || !hasOut(p)) return '';
   const v = owedByBank(p);
@@ -184,7 +191,7 @@ function settlements() {
   const list = [];
   while (cr.length && de.length) {
     const amt = r2(Math.min(cr[0].v, de[0].v));
-    list.push({ from: de[0].name, to: cr[0].name, amt });
+    list.push({ from: de[0].name, to: cr[0].name, amt, key: `${de[0].name}>${cr[0].name}>${amt}` });
     cr[0].v = r2(cr[0].v - amt); de[0].v = r2(de[0].v - amt);
     if (cr[0].v <= 0.004) cr.shift();
     if (de[0].v <= 0.004) de.shift();
@@ -195,7 +202,13 @@ function renderSettle() {
   const el = $('#settleList'), r = settlements();
   if (r.note) el.innerHTML = `<div class="text-stone-500">${esc(r.note)}</div>`;
   else if (!r.list.length) el.innerHTML = '<div class="font-semibold text-emerald-800">Everyone is square. No payments needed.</div>';
-  else el.innerHTML = r.list.map(x => `<div class="flex items-center gap-2 bg-stone-100 rounded-lg px-3 py-2"><b>${esc(x.from)}</b> pays <b>${esc(x.to)}</b><span class="ml-auto font-bold text-emerald-800">${money(x.amt)}</span></div>`).join('');
+  else el.innerHTML = r.list.map(x => {
+    const done = !!state.settled[x.key];
+    return `<label class="flex items-center gap-3 bg-stone-100 rounded-lg px-3 py-2 cursor-pointer ${done ? 'opacity-60' : ''}">
+      <input type="checkbox" data-settle="${esc(x.key)}" class="w-4 h-4 p-0 accent-emerald-700" ${done ? 'checked' : ''}>
+      <span class="${done ? 'line-through' : ''}"><b>${esc(x.from)}</b> pays <b>${esc(x.to)}</b></span>
+      <span class="ml-auto font-bold text-emerald-800">${money(x.amt)}</span>${done ? '<span class="text-xs font-bold text-emerald-800">DONE</span>' : ''}</label>`;
+  }).join('');
 }
 const hasOut = p => p.out !== '' && p.out !== null && !isNaN(parseFloat(p.out));
 
@@ -229,7 +242,7 @@ function render() {
             <span class="text-stone-500">$</span>
             <input data-f="amount" type="number" min="0" step="any" inputmode="decimal" class="w-24" value="${esc(b.amount)}">
             ${p.host ? '<span class="flex-1 max-w-[9rem] border rounded-lg px-2 py-1.5 text-sm bg-emerald-100 text-emerald-900 border-emerald-500 font-semibold">Bank</span>' : `<select data-f="method" class="flex-1 max-w-[9rem] ${payClass(b.method)}" aria-label="Payment method">
-              ${METHODS.map(m => `<option ${m === b.method ? 'selected' : ''}>${m}</option>`).join('')}
+              ${BUYIN_METHODS.map(m => `<option ${m === b.method ? 'selected' : ''}>${m}</option>`).join('')}
             </select>`}
             <button data-act="rmBuyIn" class="text-stone-400 hover:text-red-600 px-2 text-lg leading-none ${p.buyIns.length < 2 ? 'invisible' : ''}" aria-label="Remove buy-in">&times;</button>
           </div>`).join('')}
@@ -302,6 +315,7 @@ function update() {
 }
 
 const CODES = { Venmo: 'v', Zelle: 'z', Cash: 'c', Other: 'o' };
+const BUYIN_CODES = { ...CODES, Credit: '_' };
 function fmtTime(t) {
   if (!t) return '';
   const [h, m] = t.split(':').map(Number);
@@ -325,7 +339,7 @@ function buildText() {
   if (sb || bb) lines.push(`${sb || '?'}/${bb || '?'}`);
   lines.push('');
   state.players.forEach((p, i) => {
-    const ins = p.buyIns.map(b => n2(num(b.amount)) + (p.host ? 'b' : CODES[b.method] || '')).join(' ');
+    const ins = p.buyIns.map(b => n2(num(b.amount)) + (p.host ? 'b' : BUYIN_CODES[b.method] || '')).join(' ');
     lines.push(`${i + 1}. ${pname(p)}${p.host ? ' [bank]' : ''} ${ins} (${hasOut(p) ? n2(num(p.out)) + (p.host ? '' : CODES[p.outMethod] || (p.done ? 'd' : '')) : '?'})`);
   });
   if (!state.players.length) return lines.join('\n');
@@ -347,13 +361,14 @@ function buildText() {
   if (state.settle !== false && sr.list) {
     lines.push('', 'Settle up');
     if (!sr.list.length) lines.push('No payments needed');
-    sr.list.forEach(x => lines.push(`${x.from} pays ${x.to} ${n2(x.amt)}`));
+    sr.list.forEach(x => lines.push(`${x.from} pays ${x.to} ${n2(x.amt)}${state.settled[x.key] ? ' DONE' : ''}`));
   }
   return lines.join('\n');
 }
 
 // ---------- Import ----------
 const CODE_TO_METHOD = { v: 'Venmo', z: 'Zelle', c: 'Cash', o: 'Other' };
+const CODE_TO_BUYIN = { ...CODE_TO_METHOD, r: 'Credit', _: 'Credit' };
 function to24(t) {
   const m = /^(\d{1,2})(?::(\d{2}))?\s*([ap])m$/i.exec(t.trim());
   if (!m) return '';
@@ -372,15 +387,15 @@ function parseImport(text) {
   lines.forEach((line, i) => {
     if ((m = playerRe.exec(line))) {
       const tokens = m[1].split(/\s+/), amounts = [];
-      while (tokens.length > 1 && /^\d*\.?\d+[a-z]?$/i.test(tokens[tokens.length - 1])) amounts.unshift(tokens.pop());
+      while (tokens.length > 1 && /^\d*\.?\d+[a-z_]?$/i.test(tokens[tokens.length - 1])) amounts.unshift(tokens.pop());
       const nameStr = tokens.join(' ');
       const host = /\[bank\]/i.test(nameStr) && !seenBank;
       if (host) seenBank = true;
       let name = nameStr.replace(/\[bank\]/ig, '').trim();
       if (name.toLowerCase() === 'unnamed') name = '';
       const buyIns = (amounts.length ? amounts : ['0']).map(t => {
-        const x = /^(\d*\.?\d+)([a-z]?)$/i.exec(t);
-        return { id: id(), amount: parseFloat(x[1]), method: CODE_TO_METHOD[x[2].toLowerCase()] || 'Unpaid' };
+        const x = /^(\d*\.?\d+)([a-z_]?)$/i.exec(t);
+        return { id: id(), amount: parseFloat(x[1]), method: CODE_TO_BUYIN[x[2].toLowerCase()] || 'Unpaid' };
       });
       const code = m[3].toLowerCase();
       res.players.push({ id: id(), name, host, buyIns, out: m[2] === '?' ? '' : m[2],
@@ -453,6 +468,7 @@ document.addEventListener('input', e => {
   else if (t.id === 'gameEnd') state.end = t.value;
   else if (t.id === 'settleToggle') state.settle = t.checked;
   else if (t.id === 'defaultBuyIn') state.defaultBuyIn = num(t.value);
+  else if (t.dataset.settle !== undefined) { if (t.checked) state.settled[t.dataset.settle] = true; else delete state.settled[t.dataset.settle]; }
   else if (f) {
     const p = state.players.find(x => x.id === t.closest('[data-pid]').dataset.pid);
     if (f === 'host') {
