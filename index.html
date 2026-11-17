@@ -11,11 +11,22 @@
   input, select, textarea { background:#fff; border:1px solid #d9d2c0; border-radius:.5rem; padding:.4rem .6rem; min-width:0; }
   input:focus, select:focus, textarea:focus, button:focus-visible { outline:2px solid #c8372d; outline-offset:1px; }
   input[type=number]::-webkit-inner-spin-button { display:none; }
+  /* checkboxes: white box; green fill with a white check mark when ticked */
+  input[type=checkbox] { -webkit-appearance:none; appearance:none; width:1.1rem; height:1.1rem; background-color:#fff; border:1.5px solid #5b6b63; border-radius:.3rem; padding:0; cursor:pointer; flex-shrink:0; }
+  input[type=checkbox]:checked { background-color:#047857; border-color:#047857;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M3.5 8.5l3 3 6-7' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-position:center; background-repeat:no-repeat; background-size:85%; }
+  input[type=checkbox]:disabled { cursor:not-allowed; }
   .chip { position:relative; width:2.25rem; height:2.25rem; border-radius:9999px; background:#111; box-shadow:0 0 0 3px #111; }
   .chip::before { content:''; position:absolute; inset:0; border-radius:9999px;
     background:repeating-conic-gradient(rgba(255,255,255,.85) 0 22deg, transparent 22deg 60deg);
     -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
             mask:radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px)); }
+  .card.bankcard { background:#e1f0fb; }
+  #toTop { position:fixed; right:1rem; bottom:calc(1rem + env(safe-area-inset-bottom, 0px)); z-index:40; width:3rem; height:3rem; border-radius:9999px; display:grid; place-items:center;
+    background:#fbbf24; color:#1c1917; border:0; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); }
+  #toTop:hover { background:#fcd34d; }
+  #toTop[hidden] { display:none; }
   .paidout { opacity:.5; filter:grayscale(1); transition:opacity .15s; }
   .paidout:hover, .paidout:focus-within { opacity:1; filter:none; }
   pre { white-space:pre-wrap; word-break:break-word; }
@@ -32,15 +43,24 @@
     </div>
   </header>
 
+  <nav role="tablist" aria-label="Sections" class="flex gap-2 mb-5 overflow-x-auto">
+    <button role="tab" id="tabbtn-game" data-tab="game">Game</button>
+    <button role="tab" id="tabbtn-settle" data-tab="settle">Settle up</button>
+    <button role="tab" id="tabbtn-summary" data-tab="summary">Summary</button>
+  </nav>
+
+  <div id="tab-game" role="tabpanel">
+
   <details id="importBox" class="card rounded-2xl p-5 mb-5">
     <summary class="font-bold text-lg cursor-pointer">Import from text</summary>
     <p class="text-xs text-stone-500 mt-2">Paste a summary in the same format as the copied text. Players, buy-ins, buy-outs, bank, done, and (if present) the game name, date, times and blinds are filled in.</p>
     <textarea id="importText" rows="8" spellcheck="false" class="w-full mt-3 font-mono text-sm" placeholder="1. maya 100 (22)"></textarea>
     <div class="flex flex-wrap items-center gap-3 mt-3">
       <button id="importBtn" class="bg-amber-400 hover:bg-amber-300 text-stone-900 font-semibold rounded-lg px-4 py-2 text-sm">Import</button>
-      <label class="text-sm flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="importAppend" class="w-4 h-4 p-0 accent-emerald-700"> Add to existing players instead of replacing them</label>
+      <button id="clearImport" class="border border-stone-400 hover:bg-stone-100 rounded-lg px-3 py-2 text-sm font-semibold">Clear</button>
       <button id="undoImport" hidden class="border border-stone-400 hover:bg-stone-100 rounded-lg px-3 py-2 text-sm font-semibold">Undo import</button>
     </div>
+    <label class="text-sm flex items-center gap-1.5 cursor-pointer mt-3"><input type="checkbox" id="importAppend" class="w-4 h-4 p-0 accent-emerald-700"> Add to existing players instead of replacing them</label>
     <p id="importMsg" class="text-sm mt-2" aria-live="polite"></p>
   </details>
 
@@ -80,6 +100,9 @@
     <button id="reset" class="border border-sky-200/40 hover:bg-white/10 rounded-lg px-4 py-2 text-sm">Clear game</button>
   </div>
 
+  </div>
+
+  <div id="tab-settle" role="tabpanel" hidden>
   <section id="summary" class="card rounded-2xl p-5 mt-6">
     <div class="grid grid-cols-3 gap-3 text-center">
       <div><div class="text-xs text-stone-500">Total buy-ins</div><div id="tIn" class="text-2xl font-bold">$0</div></div>
@@ -87,7 +110,15 @@
       <div><div class="text-xs text-stone-500">Difference</div><div id="tDiff" class="text-2xl font-bold">$0</div></div>
     </div>
     <div id="status" class="mt-4 rounded-xl px-4 py-3 text-sm font-medium"></div>
-    <div id="methods" class="mt-4 flex flex-wrap gap-2 text-sm"></div>
+    <details id="grpTypes" class="mt-4">
+    <summary class="cursor-pointer text-sm font-bold select-none">Buy-ins, buy-outs &amp; money received</summary>
+    <div class="mt-3 text-xs font-semibold text-stone-500">Buy-ins by type</div>
+    <div id="methods" class="mt-1 flex flex-wrap gap-2 text-sm"></div>
+    <div class="mt-3 text-xs font-semibold text-stone-500">Buy-outs by type</div>
+    <div id="outMethods" class="mt-1 flex flex-wrap gap-2 text-sm"></div>
+    <div class="mt-4 text-xs font-semibold text-stone-500">Money received vs sent out <span class="font-normal">(paid buy-ins vs paid buy-outs; excludes the bank's own, credit and unpaid)</span></div>
+    <div id="cashTable" class="mt-1 overflow-x-auto"></div>
+    </details>
   </section>
 
   <section class="card rounded-2xl p-5 mt-5">
@@ -97,22 +128,37 @@
     </div>
     <p class="text-xs text-stone-500 mb-3">Fewest payments so losers pay the winners. With a bank, money already paid in is counted, so the bank is just another person to pay or be paid.</p>
     <div id="settleList" class="space-y-1.5 text-sm"></div>
+    <details id="grpBank" class="mt-3">
+      <summary class="cursor-pointer text-sm font-bold select-none">Bank: money held &amp; check</summary>
+      <div id="bankHold" class="mt-3"></div>
+      <div id="bankCheck" class="mt-3"></div>
+    </details>
   </section>
 
+  </div>
+
+  <div id="tab-summary" role="tabpanel" hidden>
   <section class="card rounded-2xl p-5 mt-5">
     <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
       <div><h2 class="font-bold text-lg">Copyable summary</h2>
-        <p class="text-xs text-stone-500">Letter after a buy-in or buy-out = how it was paid: v venmo, z zelle, c cash, o other, _ credit (buy-in only), b bank, d done (buy-out only). No letter = unpaid. Number in parentheses = buy-out (letter = how the player was paid out).</p></div>
+        <p class="text-xs text-stone-500">Letter after a buy-in or buy-out = how it was paid: v venmo, z zelle, c cash, o other, _ credit (buy-in only), b bank, d done (buy-out only). No letter = unpaid. Numbers in parentheses = buy-outs (a letter = how that buy-out was paid, several show the total then each in [ ], d = done).</p></div>
       <button id="copy" class="bg-stone-900 hover:bg-stone-700 text-white rounded-lg px-4 py-2 text-sm font-semibold">Copy text</button>
     </div>
     <pre id="output" class="bg-white border border-stone-200 rounded-xl p-4 text-sm font-mono leading-relaxed"></pre>
   </section>
+  </div>
 </div>
+
+<button id="toTop" type="button" hidden aria-label="Back to top" title="Back to top">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+</button>
 
 <script>
 const METHODS = ['Unpaid', 'Venmo', 'Zelle', 'Cash', 'Other'];            // buy-out (payout) methods
 const BUYIN_METHODS = ['Unpaid', 'Credit', 'Venmo', 'Zelle', 'Cash', 'Other']; // buy-ins may also be Credit
-const payClass = m => m === 'Unpaid'
+const payClass = m => m === 'Bank'
+  ? 'bg-sky-100 text-sky-900 border-sky-400 font-semibold'
+  : m === 'Unpaid'
   ? 'bg-red-100 text-red-900 border-red-400 font-semibold'
   : m === 'Credit'
     ? 'bg-yellow-100 text-yellow-900 border-yellow-500 font-semibold'
@@ -126,11 +172,17 @@ let state = load() || fresh();
 
 function fresh() {
   const d = new Date(), pad = n => String(n).padStart(2, '0');
-  return { name: 'poker', date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, start: '', end: '', sb: '.25', bb: '.25', settled: {}, defaultBuyIn: 50,
+  return { name: 'poker', date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, start: '', end: '', sb: '.25', bb: '.25', settled: {}, settlePay: {}, defaultBuyIn: 50,
     players: [newPlayer(), newPlayer()] };
 }
 function newPlayer(def = 50) {
-  return { id: id(), name: '', buyIns: [{ id: id(), amount: def, method: 'Unpaid' }], out: '0', outMethod: 'Unpaid', done: false };
+  return { id: id(), name: '', buyIns: [{ id: id(), amount: def, method: 'Unpaid' }], outs: [{ id: id(), amount: '0', method: 'Unpaid' }], done: false };
+}
+function normOuts(p) {
+  if (Array.isArray(p.outs) && p.outs.length)
+    return p.outs.map(o => ({ id: o.id || id(), amount: o.amount == null ? '' : o.amount, method: METHODS.includes(o.method) ? o.method : 'Unpaid' }));
+  // older saves had a single buy-out + method
+  return [{ id: id(), amount: p.out == null ? '0' : p.out, method: METHODS.includes(p.outMethod) ? p.outMethod : 'Unpaid' }];
 }
 function load() {
   try {
@@ -138,10 +190,14 @@ function load() {
     if (!d || !Array.isArray(d.players)) return null;
     const base = fresh();
     if (!d.settled || typeof d.settled !== 'object') d.settled = {};
+    if (!d.settlePay || typeof d.settlePay !== 'object') { // older saves kept one method per payment
+      d.settlePay = {};
+      Object.entries(d.settleMethod || {}).forEach(([k, m]) => { d.settlePay[k] = [{ id: id(), amount: k.split('>').pop(), method: m }]; });
+    }
     let seenBank = false;
     return Object.assign(base, d, { players: d.players.map(p => {
       const bi = Array.isArray(p.buyIns) && p.buyIns.length ? p.buyIns : [{}];
-      return { id: p.id || id(), name: p.name || '', host: p.host && !seenBank ? (seenBank = true) : false, out: p.out == null ? '0' : p.out, done: !!p.done || p.outMethod === 'Done', outMethod: METHODS.includes(p.outMethod) ? p.outMethod : 'Unpaid',
+      return { id: p.id || id(), name: p.name || '', host: p.host && !seenBank ? (seenBank = true) : false, outs: normOuts(p), done: !!p.done || p.outMethod === 'Done',
         buyIns: bi.map(x => ({ id: x.id || id(), amount: x.amount == null ? 50 : x.amount, method: x.method || 'Unpaid' })) };
     }) });
   } catch (e) { return null; }
@@ -164,11 +220,14 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 const playerIn = p => p.buyIns.reduce((s, b) => s + num(b.amount), 0);
 // Bank owes = buy-out minus any buy-ins this player has not paid yet.
 const unpaidIn = p => p.host ? 0 : p.buyIns.filter(b => b.method === 'Unpaid').reduce((t, b) => t + num(b.amount), 0);
-const paidOut = p => !p.host && !!p.outMethod && p.outMethod !== 'Unpaid';
+const outAmt = p => p.outs.reduce((t, o) => t + num(o.amount), 0);
+const unpaidOutAmt = p => p.outs.filter(o => o.method === 'Unpaid').reduce((t, o) => t + num(o.amount), 0);
+const anyPaidOut = p => !p.host && p.outs.some(o => o.method !== 'Unpaid');
+const paidOut = p => !p.host && p.outs.every(o => o.method !== 'Unpaid'); // every buy-out has a payout method
 const creditIn = p => p.host ? 0 : p.buyIns.filter(b => b.method === 'Credit').reduce((t, b) => t + num(b.amount), 0);
 // Credit buy-ins are netted against the buy-out. Once a payout method is chosen, the difference
 // (buy-out minus credit) is assumed to have been paid out or requested, so only truly Unpaid buy-ins remain.
-const owedByBank = p => Math.round(((paidOut(p) ? 0 : num(p.out) - creditIn(p)) - unpaidIn(p)) * 100) / 100;
+const owedByBank = p => Math.round((unpaidOutAmt(p) - (anyPaidOut(p) ? 0 : creditIn(p)) - unpaidIn(p)) * 100) / 100;
 const owePhrase = p => {
   if (p.host || !hasOut(p)) return '';
   const v = owedByBank(p);
@@ -180,37 +239,133 @@ function settlements() {
   const P = state.players;
   if (P.length < 2) return { note: 'Add at least two players.' };
   if (P.some(p => !hasOut(p))) return { note: 'Enter every buy-out to see who pays whom.' };
-  const tIn = P.reduce((t, p) => t + playerIn(p), 0), tOut = P.reduce((t, p) => t + num(p.out), 0);
+  const tIn = P.reduce((t, p) => t + playerIn(p), 0), tOut = P.reduce((t, p) => t + outAmt(p), 0);
   const diff = r2(tIn - tOut);
   if (diff !== 0) return { note: `Not zero sum (off by ${diff > 0 ? '+' : '-'}${Math.abs(diff)}). Fix buy-ins or buy-outs first.` };
   const bank = P.find(p => p.host);
-  const bal = P.map(p => ({ p, name: pname(p), v: bank ? (p.host ? 0 : owedByBank(p)) : r2(num(p.out) - playerIn(p)) }));
+  const bal = P.map(p => ({ p, name: pname(p), v: bank ? (p.host ? 0 : owedByBank(p)) : r2(outAmt(p) - playerIn(p)) }));
   if (bank) bal.find(x => x.p === bank).v = r2(-bal.reduce((t, x) => t + x.v, 0));
-  const cr = bal.filter(x => x.v > 0.004).map(x => ({ name: x.name, v: x.v })).sort((a, b) => b.v - a.v);
-  const de = bal.filter(x => x.v < -0.004).map(x => ({ name: x.name, v: -x.v })).sort((a, b) => b.v - a.v);
+  const cr = bal.filter(x => x.v > 0.004).map(x => ({ name: x.name, v: x.v, p: x.p })).sort((a, b) => b.v - a.v);
+  const de = bal.filter(x => x.v < -0.004).map(x => ({ name: x.name, v: -x.v, p: x.p })).sort((a, b) => b.v - a.v);
   const list = [];
   while (cr.length && de.length) {
     const amt = r2(Math.min(cr[0].v, de[0].v));
-    list.push({ from: de[0].name, to: cr[0].name, amt, key: `${de[0].name}>${cr[0].name}>${amt}` });
+    list.push({ fromP: de[0].p, toP: cr[0].p, from: de[0].name, to: cr[0].name, amt, key: `${de[0].name}>${cr[0].name}>${amt}` });
     cr[0].v = r2(cr[0].v - amt); de[0].v = r2(de[0].v - amt);
     if (cr[0].v <= 0.004) cr.shift();
     if (de[0].v <= 0.004) de.shift();
   }
   return { list };
 }
+// "56z" for one payment, " [46z 10z]" when a payment was split
+const payText = x => { const rows = state.settlePay[x.key] || []; return rows.length > 1 ? ` [${rows.map(payTok).join(' + ')}]` : rows.length ? (CODES[rows[0].method] || '') : ''; };
+const CASH_METHODS = METHODS.slice(1); // Venmo, Zelle, Cash, Other
+// After every settle-up payment is made, is the bank left with its own profit/loss?
+function bankCheck() {
+  const r = settlements(), bank = state.players.find(p => p.host);
+  if (!bank || !r.list) return null;
+  let paidIn = 0, paidOutAmt = 0, netted = 0, toBank = 0, fromBank = 0;
+  state.players.filter(p => !p.host).forEach(p => {
+    p.buyIns.forEach(b => { if (CASH_METHODS.includes(b.method)) paidIn += num(b.amount); });
+    p.outs.forEach(o => { if (o.method !== 'Unpaid') paidOutAmt += num(o.amount); });
+    if (anyPaidOut(p)) netted += creditIn(p); // credit is assumed netted against the payout
+  });
+  // a payment between two players settles the bank's debt to one and the other's debt to the bank: net zero for the bank
+  r.list.forEach(x => { if (x.toP === bank) toBank += x.amt; else if (x.fromP === bank) fromBank += x.amt; });
+  const left = r2(paidIn + netted - paidOutAmt + toBank - fromBank), profit = r2(outAmt(bank) - playerIn(bank));
+  return { paidIn: r2(paidIn), netted: r2(netted), paidOutAmt: r2(paidOutAmt), toBank: r2(toBank), fromBank: r2(fromBank), left, profit, ok: Math.abs(left - profit) < 0.005 };
+}
+// Cash the bank is holding in each payment type: paid buy-ins minus paid buy-outs, then settle-up payments as they are made
+function bankHoldings() {
+  const bank = state.players.find(p => p.host);
+  if (!bank) return null;
+  const h = {}, add = (m, v) => { h[m] = r2((h[m] || 0) + v); };
+  state.players.filter(p => !p.host).forEach(p => {
+    p.buyIns.forEach(b => { if (CASH_METHODS.includes(b.method)) add(b.method, num(b.amount)); });
+    p.outs.forEach(o => { if (CASH_METHODS.includes(o.method)) add(o.method, -num(o.amount)); });
+    // credit is assumed netted against the payout, so that much less cash actually left the bank
+    if (anyPaidOut(p) && creditIn(p)) add(p.outs.find(o => o.method !== 'Unpaid').method, creditIn(p));
+  });
+  const r = settlements();
+  let pendIn = 0, pendOut = 0;
+  (r.list || []).forEach(x => {
+    const sign = x.toP === bank ? 1 : x.fromP === bank ? -1 : 0;
+    if (!sign) return; // players paying each other doesn't move the bank's cash
+    const rows = state.settlePay[x.key] || [], paid = rows.filter(w => w.method !== 'Unpaid');
+    let applied = 0;
+    if (paid.length) paid.forEach(w => { add(w.method, sign * num(w.amount)); applied += num(w.amount); });
+    else if (state.settled[x.key]) { add('Unspecified', sign * x.amt); applied = x.amt; } // ticked done, no type chosen
+    const rem = Math.max(0, r2(x.amt - applied));
+    if (sign > 0) pendIn += rem; else pendOut += rem;
+  });
+  return { h, total: r2(Object.values(h).reduce((t, v) => t + v, 0)), pendIn: r2(pendIn), pendOut: r2(pendOut), hasList: !!r.list };
+}
+const payTok = r => (r.amount === '' || isNaN(parseFloat(r.amount)) ? '?' : n2(num(r.amount))) + (CODES[r.method] || '');
 function renderSettle() {
   const el = $('#settleList'), r = settlements();
+  const ae = document.activeElement; // keep the cursor in a split-amount box while typing
+  const keep = ae && ae.dataset && ae.dataset.sf === 'amount' && el.contains(ae)
+    ? { k: ae.closest('[data-skey]').dataset.skey, sid: ae.closest('[data-sid]').dataset.sid, pos: ae.selectionStart } : null;
   if (r.note) el.innerHTML = `<div class="text-stone-500">${esc(r.note)}</div>`;
   else if (!r.list.length) el.innerHTML = '<div class="font-semibold text-emerald-800">Everyone is square. No payments needed.</div>';
   else el.innerHTML = r.list.map(x => {
-    const done = !!state.settled[x.key];
-    return `<label class="flex items-center gap-3 bg-stone-100 rounded-lg px-3 py-2 cursor-pointer ${done ? 'opacity-60' : ''}">
-      <input type="checkbox" data-settle="${esc(x.key)}" class="w-4 h-4 p-0 accent-emerald-700" ${done ? 'checked' : ''}>
-      <span class="${done ? 'line-through' : ''}"><b>${esc(x.from)}</b> pays <b>${esc(x.to)}</b></span>
-      <span class="ml-auto font-bold text-emerald-800">${money(x.amt)}</span>${done ? '<span class="text-xs font-bold text-emerald-800">DONE</span>' : ''}</label>`;
+    const rows = state.settlePay[x.key] || (state.settlePay[x.key] = [{ id: id(), amount: String(x.amt), method: 'Unpaid' }]);
+    const done = !!state.settled[x.key], multi = rows.length > 1;
+    const sel = row => `<select data-sf="method" class="w-28 shrink-0 ${payClass(row.method)}" aria-label="How this payment was made">${METHODS.map(m => `<option ${m === row.method ? 'selected' : ''}>${m}</option>`).join('')}</select>`;
+    const sum = r2(rows.reduce((t, w) => t + num(w.amount), 0));
+    return `<div data-skey="${esc(x.key)}" class="border rounded-lg px-3 py-2 ${done ? 'bg-emerald-100 text-emerald-900 border-emerald-500' : 'bg-red-100 text-red-900 border-red-400'}">
+      <div class="flex items-center gap-3">
+        <label class="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
+          <input type="checkbox" data-settle="${esc(x.key)}" class="w-4 h-4 p-0 accent-emerald-700" ${done ? 'checked' : ''}>
+          <span><b>${esc(x.from)}</b> pays <b>${esc(x.to)}</b></span>
+        </label>
+        ${multi ? '' : `<span data-sid="${rows[0].id}">${sel(rows[0])}</span>`}
+        <span class="font-bold">${money(x.amt)}</span>${done ? '<span class="text-xs font-bold">DONE</span>' : ''}
+      </div>
+      ${multi ? rows.map(w => `<div data-sid="${w.id}" class="flex items-center gap-2 mt-2 pl-7">
+        <span>$</span><input data-sf="amount" type="text" inputmode="decimal" class="w-24" placeholder="0" value="${esc(w.amount)}">${sel(w)}
+        <button data-act="rmPay" class="px-2 text-lg leading-none opacity-60 hover:opacity-100" aria-label="Remove payment">&times;</button></div>`).join('') : ''}
+      <div class="mt-1 pl-7 text-xs flex flex-wrap gap-x-3">
+        <button data-act="addPay" class="font-semibold underline">+ Split into another payment</button>
+        ${multi && sum !== x.amt ? `<span class="font-semibold">${money(sum)} of ${money(x.amt)} (${money(r2(x.amt - sum))} left)</span>` : ''}
+      </div>
+    </div>`;
   }).join('');
+  const bh = bankHoldings(), hold = $('#bankHold');
+  $('#grpBank').hidden = !bh;
+  if (!bh) hold.innerHTML = '';
+  else {
+    const order = [...CASH_METHODS, 'Unspecified'].filter(m => bh.h[m]);
+    const pend = !bh.hasList ? '' : (bh.pendIn || bh.pendOut)
+      ? `Still to settle: bank receives ${money(bh.pendIn)}, bank pays ${money(bh.pendOut)}.` : 'All settle-up payments with the bank are complete.';
+    hold.innerHTML = `<div class="rounded-xl px-4 py-3 text-sm border bg-sky-50 border-sky-300 text-sky-950">
+      <div class="font-bold mb-1">Money the bank is holding <span class="font-normal text-xs">(updates as settle-up payments are made)</span></div>
+      <div class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-0.5">
+        ${order.map(m => `<span>${m}</span><span class="text-right ${bh.h[m] < 0 ? 'text-red-700 font-semibold' : ''}">${signed(bh.h[m]).replace('+', '')}</span>`).join('') || '<span class="text-sky-900/60">Nothing paid in or out yet.</span><span></span>'}
+        <span class="font-bold border-t border-current/30 pt-0.5">Total held</span><span class="text-right font-bold border-t border-current/30 pt-0.5 ${bh.total < 0 ? 'text-red-700' : ''}">${signed(bh.total).replace('+', '')}</span>
+      </div>
+      ${pend ? `<div class="mt-1 text-xs">${pend}</div>` : ''}
+    </div>`;
+  }
+  const bc = bankCheck(), box = $('#bankCheck');
+  box.innerHTML = !bc ? '' : `<div class="rounded-xl px-4 py-3 text-sm border ${bc.ok ? 'bg-emerald-50 border-emerald-400 text-emerald-900' : 'bg-red-50 border-red-400 text-red-900'}">
+    <div class="font-bold mb-1">Bank check: ${bc.ok ? 'after everyone is paid, the bank matches' : 'does not match'}</div>
+    <div class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-0.5">
+      <span>Received from players (paid buy-ins${bc.netted ? ' + credit netted' : ''})</span><span class="text-right">${money(r2(bc.paidIn + bc.netted))}</span>
+      <span>Paid out to players (paid buy-outs)</span><span class="text-right">-${money(bc.paidOutAmt)}</span>
+      <span>Settle up: bank receives</span><span class="text-right">${money(bc.toBank)}</span>
+      <span>Settle up: bank pays</span><span class="text-right">-${money(bc.fromBank)}</span>
+      <span class="font-bold border-t border-current/30 pt-0.5">Bank is left with</span><span class="text-right font-bold border-t border-current/30 pt-0.5">${signed(bc.left)}</span>
+      <span>Bank's profit/loss (buy-out minus buy-ins)</span><span class="text-right">${signed(bc.profit)}</span>
+    </div>
+    ${bc.ok ? '' : `<div class="mt-1 font-semibold">Off by ${money(Math.abs(r2(bc.left - bc.profit)))}</div>`}
+  </div>`;
+  if (keep) {
+    const row = [...el.querySelectorAll('[data-skey]')].find(d => d.dataset.skey === keep.k)?.querySelector(`[data-sid="${keep.sid}"] [data-sf=amount]`);
+    if (row) { row.focus(); try { row.setSelectionRange(keep.pos, keep.pos); } catch (e) {} }
+  }
 }
-const hasOut = p => p.out !== '' && p.out !== null && !isNaN(parseFloat(p.out));
+const hasOut = p => p.outs.some(o => o.amount !== '' && o.amount != null && !isNaN(parseFloat(o.amount)));
 
 function render() {
   const wrap = $('#players');
@@ -220,7 +375,7 @@ function render() {
   }
   state.players.forEach((p, i) => {
     const el = document.createElement('div');
-    el.className = 'card rounded-2xl p-4 sm:p-5';
+    el.className = 'card rounded-2xl p-4 sm:p-5' + (p.host ? ' bankcard' : '');
     el.dataset.pid = p.id;
     el.innerHTML = `
       <div class="flex gap-3 items-center flex-wrap">
@@ -228,28 +383,44 @@ function render() {
         ${(() => { const locked = !p.host && state.players.some(x => x.host);
         return `<label class="text-sm flex items-center gap-1.5 ${locked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}" ${locked ? 'title="Only one bank allowed. Uncheck the current bank first."' : ''}><input type="checkbox" data-f="host" class="w-4 h-4 p-0 accent-emerald-700" ${p.host ? 'checked' : ''} ${locked ? 'disabled' : ''}> Bank</label>`; })()}
         ${p.host ? '' : `<label class="text-sm flex items-center gap-1.5 cursor-pointer" title="Mark this player as fully settled"><input type="checkbox" data-f="done" class="w-4 h-4 p-0 accent-emerald-700" ${p.done ? 'checked' : ''}> Done</label>`}
-        <label class="text-sm flex items-center gap-2">Buy-out $
-          <input data-f="out" type="number" min="0" step="any" inputmode="decimal" class="w-28" placeholder="0" value="${esc(p.out)}">
-        </label>
-        ${p.host ? '' : `<select data-f="outMethod" class="w-28 ${payClass(p.outMethod)}" aria-label="Buy-out payment method" title="How this player was paid out">
-          ${METHODS.map(m => `<option ${m === p.outMethod ? 'selected' : ''}>${m}</option>`).join('')}
-        </select>`}
       </div>
+      <div class="md:grid md:grid-cols-[1fr_auto_1fr]">
+      <div>
       <div class="mt-3 space-y-2">
         ${p.buyIns.map((b, j) => `
           <div class="flex gap-2 items-center" data-bid="${b.id}">
-            <span class="text-xs text-stone-500 w-14 shrink-0">Buy-in ${j + 1}</span>
+            <span class="text-xs text-stone-500 w-16 shrink-0">Buy-in ${j + 1}</span>
             <span class="text-stone-500">$</span>
             <input data-f="amount" type="number" min="0" step="any" inputmode="decimal" class="w-24" value="${esc(b.amount)}">
-            ${p.host ? '<span class="flex-1 max-w-[9rem] border rounded-lg px-2 py-1.5 text-sm bg-emerald-100 text-emerald-900 border-emerald-500 font-semibold">Bank</span>' : `<select data-f="method" class="flex-1 max-w-[9rem] ${payClass(b.method)}" aria-label="Payment method">
+            ${p.host ? '<span class="flex-1 max-w-[9rem] border rounded-lg px-2 py-1.5 text-sm bg-sky-100 text-sky-900 border-sky-400 font-semibold">Bank</span>' : `<select data-f="method" class="flex-1 max-w-[9rem] ${payClass(b.method)}" aria-label="Payment method">
               ${BUYIN_METHODS.map(m => `<option ${m === b.method ? 'selected' : ''}>${m}</option>`).join('')}
             </select>`}
             <button data-act="rmBuyIn" class="text-stone-400 hover:text-red-600 px-2 text-lg leading-none ${p.buyIns.length < 2 ? 'invisible' : ''}" aria-label="Remove buy-in">&times;</button>
           </div>`).join('')}
       </div>
+      <button data-act="addBuyIn" class="hidden md:inline-block mt-3 text-sm font-semibold text-emerald-800 hover:text-emerald-600">+ Add rebuy</button>
+      </div>
+      <div class="border-t border-dashed border-stone-400 my-3 md:my-0 md:mt-3 md:border-t-0 md:border-l md:mx-5"></div>
+      <div class="md:mt-3">
+      <div class="space-y-2">
+        ${(p.host ? p.outs.slice(0, 1) : p.outs).map((o, j) => `
+          <div class="flex gap-2 items-center" data-oid="${o.id}">
+            <span class="text-xs text-stone-500 w-16 shrink-0">Buy-out ${j + 1}</span>
+            <span class="text-stone-500">$</span>
+            <input data-f="oamount" type="number" min="0" step="any" inputmode="decimal" class="w-24" placeholder="0" value="${esc(o.amount)}">
+            ${p.host ? '' : `<select data-f="omethod" class="flex-1 max-w-[9rem] ${payClass(o.method)}" aria-label="Buy-out payment method" title="How this was paid out">
+              ${METHODS.map(m => `<option ${m === o.method ? 'selected' : ''}>${m}</option>`).join('')}
+            </select>`}
+            <button data-act="rmBuyOut" class="text-stone-400 hover:text-red-600 px-2 text-lg leading-none ${p.host || p.outs.length < 2 ? 'invisible' : ''}" aria-label="Remove buy-out">&times;</button>
+          </div>`).join('')}
+      </div>
+      ${p.host ? '' : '<button data-act="addBuyOut" class="hidden md:inline-block mt-3 text-sm font-semibold text-emerald-800 hover:text-emerald-600">+ Add buy-out</button>'}
+      </div>
+      </div>
       <div class="mt-3 flex items-center justify-between flex-wrap gap-2">
         <div class="flex items-center gap-4">
-          <button data-act="addBuyIn" class="text-sm font-semibold text-emerald-800 hover:text-emerald-600">+ Add rebuy</button>
+          <button data-act="addBuyIn" class="md:hidden text-sm font-semibold text-emerald-800 hover:text-emerald-600">+ Add rebuy</button>
+          ${p.host ? '' : '<button data-act="addBuyOut" class="md:hidden text-sm font-semibold text-emerald-800 hover:text-emerald-600">+ Add buy-out</button>'}
           <button data-act="rmPlayer" class="text-sm text-stone-400 hover:text-red-600">Delete player</button>
         </div>
         <div class="text-sm text-stone-600"><span data-r="in"></span> in &middot; <span data-r="net" class="font-bold"></span><span data-r="owe" class="block text-right text-xs font-semibold text-amber-800"></span></div>
@@ -268,14 +439,14 @@ function update() {
     el.classList.toggle('paidout', paidOut(p) || (!p.host && !!p.done));
     const n = el.querySelector('[data-r=net]');
     if (hasOut(p)) {
-      const net = num(p.out) - playerIn(p);
+      const net = outAmt(p) - playerIn(p);
       n.textContent = signed(net) + ' net';
       n.className = 'font-bold ' + (net > 0 ? 'text-emerald-700' : net < 0 ? 'text-red-700' : 'text-stone-600');
     } else { n.textContent = 'awaiting buy-out'; n.className = 'font-medium text-stone-400'; }
   });
 
   const tIn = state.players.reduce((s, p) => s + playerIn(p), 0);
-  const tOut = state.players.reduce((s, p) => s + num(p.out), 0);
+  const tOut = state.players.reduce((s, p) => s + outAmt(p), 0);
   const pending = state.players.filter(p => !hasOut(p));
   const diff = Math.round((tIn - tOut) * 100) / 100;
   $('#tIn').textContent = money(tIn);
@@ -303,8 +474,26 @@ function update() {
 
   const byMethod = {};
   state.players.forEach(p => p.buyIns.forEach(b => { const k = p.host ? 'Bank' : b.method; byMethod[k] = (byMethod[k] || 0) + num(b.amount); }));
-  $('#methods').innerHTML = Object.entries(byMethod).filter(([, v]) => v > 0)
-    .map(([m, v]) => `<span class="border rounded-full px-3 py-1 ${payClass(m)}">${m}: <b>${money(v)}</b></span>`).join('');
+
+  const none = '<span class="text-stone-400">none</span>';
+  const chips = o => Object.entries(o).filter(([, v]) => v > 0)
+    .map(([m, v]) => `<span class="border rounded-full px-3 py-1 ${payClass(m)}">${m}: <b>${money(v)}</b></span>`).join('') || none;
+  $('#methods').innerHTML = chips(byMethod);
+  const byOut = {};
+  state.players.forEach(p => p.outs.forEach(o => { const k = p.host ? 'Bank' : o.method; byOut[k] = (byOut[k] || 0) + num(o.amount); }));
+  $('#outMethods').innerHTML = chips(byOut);
+
+  const CASH = ['Venmo', 'Zelle', 'Cash', 'Other'], rec = {}, sent = {};
+  state.players.forEach(p => {
+    if (p.host) return;
+    p.buyIns.forEach(b => { if (CASH.includes(b.method)) rec[b.method] = (rec[b.method] || 0) + num(b.amount); });
+    p.outs.forEach(o => { if (CASH.includes(o.method)) sent[o.method] = (sent[o.method] || 0) + num(o.amount); });
+  });
+  const R = CASH.reduce((t, m) => t + (rec[m] || 0), 0), S = CASH.reduce((t, m) => t + (sent[m] || 0), 0);
+  const row = (label, r, x, total) => `<tr class="${total ? 'font-bold border-t border-stone-300' : ''}"><td class="py-1 pr-3">${label}</td><td class="py-1 pr-3 text-right">${money(r)}</td><td class="py-1 pr-3 text-right">${money(x)}</td><td class="py-1 text-right ${r2(r - x) < 0 ? 'text-red-700' : ''}">${signed(r2(r - x))}</td></tr>`;
+  $('#cashTable').innerHTML = (R || S)
+    ? `<table class="w-full text-sm"><thead class="text-xs text-stone-500"><tr><th class="text-left font-medium">Type</th><th class="text-right font-medium">Received</th><th class="text-right font-medium">Sent out</th><th class="text-right font-medium">Net</th></tr></thead><tbody>${CASH.filter(m => rec[m] || sent[m]).map(m => row(m, rec[m] || 0, sent[m] || 0)).join('')}${row('Total', R, S, true)}</tbody></table>`
+    : '<span class="text-sm text-stone-400">No paid buy-ins or buy-outs yet.</span>';
 
   const undo = $('#undoDelete');
   undo.hidden = !deleted.length;
@@ -324,6 +513,15 @@ function fmtTime(t) {
 // ".25" -> "$.25", "0.25" -> "$.25", "$1" -> "$1"
 const fmtBlind = v => { const c = String(v || '').trim().replace(/^\$/, '').replace(/^0(?=\.)/, ''); return c ? '$' + c : ''; };
 const pname = p => p.name.trim() || 'unnamed';
+// Buy-outs: "22", "100v 50c" (one token per buy-out, letter = how it was paid), "0d" or a lone "d" = done
+function outText(p) {
+  if (!hasOut(p)) return '?';
+  if (p.host) return n2(num(p.outs[0].amount));
+  const toks = p.outs.map(o => (o.amount === '' || isNaN(parseFloat(o.amount)) ? '?' : n2(num(o.amount))) + (CODES[o.method] || ''));
+  if (p.outs.length > 1) return `${n2(outAmt(p))} [${toks.join(' + ')}]` + (p.done ? ' d' : '');
+  if (p.done) { if (toks.length === 1 && !/[a-z]$/.test(toks[0])) toks[0] += 'd'; else toks.push('d'); }
+  return toks.join(' ');
+}
 function buildText() {
   let head = state.name || 'poker';
   if (state.date) {
@@ -340,12 +538,12 @@ function buildText() {
   lines.push('');
   state.players.forEach((p, i) => {
     const ins = p.buyIns.map(b => n2(num(b.amount)) + (p.host ? 'b' : BUYIN_CODES[b.method] || '')).join(' ');
-    lines.push(`${i + 1}. ${pname(p)}${p.host ? ' [bank]' : ''} ${ins} (${hasOut(p) ? n2(num(p.out)) + (p.host ? '' : CODES[p.outMethod] || (p.done ? 'd' : '')) : '?'})`);
+    lines.push(`${i + 1}. ${pname(p)}${p.host ? ' [bank]' : ''} ${ins} (${outText(p)})`);
   });
   if (!state.players.length) return lines.join('\n');
 
   const tIn = state.players.reduce((t, p) => t + playerIn(p), 0);
-  const tOut = state.players.reduce((t, p) => t + num(p.out), 0);
+  const tOut = state.players.reduce((t, p) => t + outAmt(p), 0);
   const pending = state.players.filter(p => !hasOut(p)).length;
   const diff = Math.round((tIn - tOut) * 100) / 100;
   lines.push('', `Total buy-ins: ${n2(tIn)}`, `Total buy-outs: ${n2(tOut)}`);
@@ -353,15 +551,14 @@ function buildText() {
     : diff === 0 ? 'Zero sum: yes' : `Zero sum: no (off by ${diff > 0 ? '+' : '-'}${n2(Math.abs(diff))})`);
   lines.push('', 'Profit / loss');
   state.players.forEach(p => {
-    const net = Math.round((num(p.out) - playerIn(p)) * 100) / 100;
-    const owe = owePhrase(p);
-    lines.push(`${pname(p)}: ` + (hasOut(p) ? (net > 0 ? '+' : net < 0 ? '-' : '') + n2(Math.abs(net)) : '?') + (owe ? ` (${owe})` : ''));
+    const net = Math.round((outAmt(p) - playerIn(p)) * 100) / 100;
+    lines.push(`${pname(p)}: ` + (hasOut(p) ? (net > 0 ? '+' : net < 0 ? '-' : '') + n2(Math.abs(net)) : '?'));
   });
   const sr = settlements();
   if (state.settle !== false && sr.list) {
     lines.push('', 'Settle up');
     if (!sr.list.length) lines.push('No payments needed');
-    sr.list.forEach(x => lines.push(`${x.from} pays ${x.to} ${n2(x.amt)}${state.settled[x.key] ? ' DONE' : ''}`));
+    sr.list.forEach(x => lines.push(`${x.from} pays ${x.to} ${n2(x.amt)}${payText(x)}${state.settled[x.key] ? ' DONE' : ''}`));
   }
   return lines.join('\n');
 }
@@ -381,7 +578,7 @@ function parseImport(text) {
   const timeRe = new RegExp(`^${T}\\s*-\\s*${T}$`, 'i');
   const blindRe = new RegExp(`^\\$?${B}\\s*/\\s*\\$?${B}$`);
   const headRe = /^(.*?)\s*(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s+)?(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/i;
-  const playerRe = /^\d+[.)]\s+(.+)\s+\((\?|\d*\.?\d+)([a-z]?)\)$/i;
+  const playerRe = /^\d+[.)]\s+(.+)\s+\(([^()]*)\)$/i;
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   let seenBank = false, nameOnly = '', m;
   lines.forEach((line, i) => {
@@ -397,9 +594,23 @@ function parseImport(text) {
         const x = /^(\d*\.?\d+)([a-z_]?)$/i.exec(t);
         return { id: id(), amount: parseFloat(x[1]), method: CODE_TO_BUYIN[x[2].toLowerCase()] || 'Unpaid' };
       });
-      const code = m[3].toLowerCase();
-      res.players.push({ id: id(), name, host, buyIns, out: m[2] === '?' ? '' : m[2],
-        outMethod: CODE_TO_METHOD[code] || 'Unpaid', done: code === 'd' });
+      let done = false;
+      let outs = [];
+      const inner = m[2].trim(), br = /\[([^\]]*)\]/.exec(inner);
+      const list = br   // "56 [46z 10z]": the total is recomputed, only the bracketed parts are read
+        ? br[1].trim().split(/[\s+]+/).filter(Boolean).concat(inner.replace(br[0], ' ').trim().split(/\s+/).filter(t => /d$/i.test(t)).map(() => 'd'))
+        : inner.split(/\s+/).filter(Boolean);
+      list.forEach(t => {
+        if (/^d$/i.test(t)) { done = true; return; }
+        const x = /^(\?|\d*\.?\d+)([a-z]?)$/i.exec(t);
+        if (!x) return;
+        const code = x[2].toLowerCase();
+        if (code === 'd') done = true;
+        outs.push({ id: id(), amount: x[1] === '?' ? '' : x[1], method: CODE_TO_METHOD[code] || 'Unpaid' });
+      });
+      if (!outs.length) outs.push({ id: id(), amount: '', method: 'Unpaid' });
+      if (host && outs.length > 1) outs = [{ id: outs[0].id, amount: String(r2(outs.reduce((t, o) => t + num(o.amount), 0))), method: 'Unpaid' }];
+      res.players.push({ id: id(), name, host, buyIns, outs, done });
     } else if ((m = timeRe.exec(line))) {
       res.set.start = m[1] === '?' ? '' : to24(m[1]);
       res.set.end = m[2] === '?' ? '' : to24(m[2]);
@@ -424,6 +635,7 @@ function parseImport(text) {
     `1. ${n[0]} 100 (22)`, `2. ${n[1]} 10v 10v 10v (0d)`, `3. ${n[2]} [bank] 100b 100b (350.50)`].join('\n');
 })();
 let importBackup = null;
+$('#clearImport').onclick = () => { $('#importText').value = ''; $('#importMsg').textContent = ''; $('#importText').focus(); };
 $('#importBtn').onclick = () => {
   const msg = $('#importMsg'), r = parseImport($('#importText').value);
   if (!r.players.length && !Object.keys(r.set).length) {
@@ -468,16 +680,34 @@ document.addEventListener('input', e => {
   else if (t.id === 'gameEnd') state.end = t.value;
   else if (t.id === 'settleToggle') state.settle = t.checked;
   else if (t.id === 'defaultBuyIn') state.defaultBuyIn = num(t.value);
-  else if (t.dataset.settle !== undefined) { if (t.checked) state.settled[t.dataset.settle] = true; else delete state.settled[t.dataset.settle]; }
+  else if (t.dataset.settle !== undefined) {
+    const k = t.dataset.settle;
+    if (t.checked) state.settled[k] = true;
+    else { delete state.settled[k]; (state.settlePay[k] || []).forEach(w => { w.method = 'Unpaid'; }); } // unticking puts every payment back to Unpaid
+  }
+  else if (t.dataset.sf !== undefined) { // a settle-up payment: amount or how it was paid
+    const k = t.closest('[data-skey]').dataset.skey, rows = state.settlePay[k], total = num(k.split('>').pop());
+    const w = rows.find(x => x.id === t.closest('[data-sid]').dataset.sid);
+    if (t.dataset.sf === 'amount') {
+      w.amount = t.value;
+      if (rows.length === 2 && t.value !== '' && !isNaN(parseFloat(t.value))) rows.find(x => x !== w).amount = String(r2(Math.max(0, total - num(t.value))));
+    } else w.method = t.value;
+    if (rows.every(x => x.method !== 'Unpaid')) state.settled[k] = true; else delete state.settled[k]; // done once every payment has a method
+  }
   else if (f) {
     const p = state.players.find(x => x.id === t.closest('[data-pid]').dataset.pid);
     if (f === 'host') {
       if (t.checked && state.players.some(x => x.host && x !== p)) { t.checked = false; return; }
+      if (t.checked) p.outs = [{ id: p.outs[0].id, amount: hasOut(p) ? String(r2(outAmt(p))) : '', method: 'Unpaid' }]; // bank has one buy-out
       p.host = t.checked; render(); return;
     }
-    if (f === 'name' || f === 'out') p[f] = t.value;
+    if (f === 'name') p.name = t.value;
     else if (f === 'done') p.done = t.checked;
-    else if (f === 'outMethod') { p.outMethod = t.value; t.className = 'w-28 ' + payClass(t.value); }
+    else if (f === 'oamount' || f === 'omethod') {
+      const o = p.outs.find(x => x.id === t.closest('[data-oid]').dataset.oid);
+      if (f === 'oamount') o.amount = t.value;
+      else { o.method = t.value; t.className = 'flex-1 max-w-[9rem] ' + payClass(t.value); }
+    }
     else { const b = p.buyIns.find(x => x.id === t.closest('[data-bid]').dataset.bid); b[f] = t.value;
       if (f === 'method') t.className = 'flex-1 max-w-[9rem] ' + payClass(t.value); }
   } else return;
@@ -499,6 +729,19 @@ document.addEventListener('click', e => {
   const card = btn.closest('[data-pid]');
   const p = card && state.players.find(x => x.id === card.dataset.pid);
   const act = btn.dataset.act;
+  if (act === 'addPay' || act === 'rmPay') {
+    const k = btn.closest('[data-skey]').dataset.skey, rows = state.settlePay[k];
+    if (act === 'addPay') rows.push({ id: id(), amount: '', method: 'Unpaid' });
+    else if (rows.length > 1) {
+      state.settlePay[k] = rows.filter(x => x.id !== btn.closest('[data-sid]').dataset.sid);
+      if (state.settlePay[k].length === 1) state.settlePay[k][0].amount = String(num(k.split('>').pop()));
+    }
+    const nr = state.settlePay[k];
+    if (nr.every(x => x.method !== 'Unpaid')) state.settled[k] = true; else delete state.settled[k];
+    update();
+    if (act === 'addPay') { const box = [...document.querySelectorAll('[data-skey]')].find(d => d.dataset.skey === k).querySelectorAll('[data-sf=amount]'); const f = box.length === 2 ? box[0] : box[box.length - 1]; f.focus(); f.select(); }
+    return;
+  }
   if (act === 'rmPlayer' && delPending !== p.id) { // first click: ask to confirm
     cancelDelete();
     delPending = p.id;
@@ -509,9 +752,12 @@ document.addEventListener('click', e => {
   }
   if (act === 'rmPlayer') cancelDelete();
   if (act === 'addBuyIn') p.buyIns.push({ id: id(), amount: state.defaultBuyIn, method: 'Unpaid' });
+  if (act === 'addBuyOut') p.outs.push({ id: id(), amount: '', method: 'Unpaid' });
+  if (act === 'rmBuyOut' && p.outs.length > 1) p.outs = p.outs.filter(o => o.id !== btn.closest('[data-oid]').dataset.oid);
   if (act === 'rmBuyIn') p.buyIns = p.buyIns.filter(b => b.id !== btn.closest('[data-bid]').dataset.bid);
   if (act === 'rmPlayer') { deleted.push({ p, idx: state.players.indexOf(p) }); state.players = state.players.filter(x => x !== p); }
   render();
+  if (act === 'addBuyOut') { const os = document.querySelectorAll(`[data-pid="${p.id}"] [data-f=oamount]`); os[os.length - 1].focus(); }
   if (act === 'addBuyIn') { const ins = document.querySelectorAll(`[data-pid="${p.id}"] [data-f=amount]`); ins[ins.length - 1].focus(); ins[ins.length - 1].select(); }
 });
 
@@ -558,7 +804,37 @@ $('#copy').onclick = async () => {
 
 function sync() { $('#gameName').value = state.name; $('#gameDate').value = state.date;
   $('#gameSB').value = state.sb || ''; $('#gameBB').value = state.bb || ''; $('#gameStart').value = state.start || ''; $('#gameEnd').value = state.end || ''; $('#settleToggle').checked = state.settle !== false; $('#defaultBuyIn').value = state.defaultBuyIn; }
-sync(); render();
+// ---------- Back to top ----------
+function updateToTop() { $('#toTop').hidden = window.scrollY < 300; }
+window.addEventListener('scroll', updateToTop, { passive: true });
+window.addEventListener('resize', updateToTop);
+$('#toTop').onclick = () => window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+
+// ---------- Tabs ----------
+const TABS = ['game', 'settle', 'summary'];
+function showTab(t) {
+  if (!TABS.includes(t)) t = 'game';
+  state.tab = t;
+  TABS.forEach(k => {
+    $('#tab-' + k).hidden = k !== t;
+    const b = $('#tabbtn-' + k);
+    b.setAttribute('aria-selected', String(k === t));
+    b.className = 'px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap ' +
+      (k === t ? 'bg-amber-400 text-stone-900' : 'text-sky-100 hover:bg-white/10 border border-sky-200/30');
+  });
+  save();
+  updateToTop();
+}
+document.querySelectorAll('[data-tab]').forEach(b => { b.onclick = () => showTab(b.dataset.tab); });
+
+// collapsible groups on the Settle up tab (closed by default, then remembered)
+[['types', 'grpTypes'], ['bank', 'grpBank']].forEach(([k, elId]) => {
+  const d = document.getElementById(elId);
+  d.open = !!(state.open && state.open[k] === true); // closed until you open it
+  d.addEventListener('toggle', () => { state.open = Object.assign({}, state.open, { [k]: d.open }); save(); });
+});
+
+sync(); render(); showTab(state.tab);
 </script>
 </body>
 </html>
